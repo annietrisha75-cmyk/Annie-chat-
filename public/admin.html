@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Annie Owner Panel</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f7f6; padding: 2rem; color: #333; }
+        h1 { margin-bottom: 1rem; color: #2c3e50; }
+        .user-card { background: white; padding: 1rem; margin-bottom: 0.8rem; border-radius: 0.5rem; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        a { background: #0084ff; color: white; padding: 0.5rem 1rem; border-radius: 0.3rem; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Active Chats & Users</h1>
+    <div id="user-list">Loading users...</div>
+
+    <script>
+        async function loadUsers() {
+            try {
+                const res = await fetch('/api/admin/users');
+                const users = await res.json();
+                const listDiv = document.getElementById('user-list');
+                
+                if (users.length === 0) {
+                    listDiv.innerHTML = '<p>No chats registered yet.</p>';
+                    return;
+                }
+
+                listDiv.innerHTML = '';
+                users.forEach(user => {
+                    const card = document.createElement('div');
+                    card.className = 'user-card';
+                    card.innerHTML = `
+                        <div>
+                            <strong>${user.email}</strong><br>
+                            <small style="color: #666;">Joined: ${new Date(user.createdAt).toLocaleString()}</small>
+                        </div>
+                        <a href="/?email=${encodeURIComponent(user.email)}" target="_blank">Open Chat</a>
+                    `;
+                    listDiv.appendChild(card);
+                });
+            } catch (err) {
+                document.getElementById('user-list').innerHTML = '<p>Error loading user list.</p>';
+            }
+        }
+        loadUsers();
+    </script>
+</body>
+</html>
