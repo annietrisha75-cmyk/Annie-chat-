@@ -12,11 +12,22 @@ app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// MongoDB Connection
+// MongoDB Connection with Auto-Retry & Stable Options
 const MONGO_URI = process.env.MONGO_URI;
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
+
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+})
+.then(() => console.log('MongoDB connected successfully'))
+.catch(err => {
+  console.error('MongoDB connection error:', err);
+});
+
+// Prevent app crash on unhandled Mongoose errors
+mongoose.connection.on('error', err => {
+  console.error('Mongoose connection runtime error:', err);
+});
 
 // Schemas
 const userSessionSchema = new mongoose.Schema({
@@ -187,7 +198,7 @@ cron.schedule('0 9,21 * * *', async () => {
             <h2 style="color:#d4af37;margin-bottom:12px;">Private Messenger Verification</h2>
             <p style="color:#9ca3af;font-size:14px;">Hello ${user.name},</p>
             <p style="color:#f9fafb;font-size:15px;line-height:1.6;margin-top:16px;">This is your automated daily reminder link to maintain your secure, encrypted session:</p>
-            <a href="https://annie-chat.onrender.com" style="background:linear-gradient(135deg, #d4af37, #aa7c11);color:#0b0f19;padding:14px 28px;text-decoration:none;border-radius:10px;display:inline-block;margin-top:24px;font-weight:700;box-shadow:0 4px 15px rgba(212,175,55,0.3);">Open Private Chat</a>
+            <a href="https://annie-chat.onrender.com" style="background:linear-gradient(135deg, #d4af37, #aa7c11);color:#0b0f19;padding:14px 28px;text-decoration:none;border-radius:10px;display:i[...]"
           </div>
         `
       };
