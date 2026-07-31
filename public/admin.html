@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { margin: 0; font-family: -apple-system, sans-serif; background: #121212; color: white; display: flex; height: 100vh; overflow: hidden; }
+        
+        #login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; z-index: 100; display: flex; justify-content: center; align-items: center; }
+        .login-box { background: #1e1e1e; padding: 30px; border-radius: 10px; text-align: center; }
+        .login-box input { padding: 10px; margin-bottom: 15px; width: 100%; border-radius: 5px; border: none; background: #333; color: white; }
+        .login-box button { padding: 10px 20px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+
+        #sidebar { width: 300px; background: #1e1e1e; border-right: 1px solid #333; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; font-weight: bold; border-bottom: 1px solid #333; }
+        #searchInput { width: calc(100% - 40px); margin: 10px 20px; padding: 10px; border-radius: 5px; border: none; background: #333; color: white; }
+        #visitorList { flex: 1; overflow-y: auto; }
+        .visitor-item { padding: 15px 20px; border-bottom: 1px solid #333; cursor: pointer; display: flex; justify-content: space-between; }
+        .visitor-item:hover { background: #2c2c2e; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: gray; display: inline-block; }
+        .status-dot.online { background: #34c759; }
+
+        #main-panel { flex: 1; display: flex; flex-direction: column; position: relative; }
+        #chatHeader { padding: 20px; background: #1e1e1e; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        
+        #chatBody { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .bubble { max-width: 60%; padding: 10px 15px; border-radius: 10px; }
+        .bubble.admin { background: #007aff; align-self: flex-end; }
+        .bubble.visitor { background: #333; align-self: flex-start; }
+        .bubble img { max-width: 100%; border-radius: 5px; margin-top: 5px; }
+
+        #inputArea { padding: 15px; background: #1e1e1e; border-top: 1px solid #333; display: flex; gap: 10px; }
+        #inputArea input[type="text"] { flex: 1; padding: 10px; border-radius: 5px; border: none; background: #333; color: white; }
+        #inputArea button { padding: 10px 20px; background: #007aff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+
+        /* The Admin Call Control Box */
+        #call-control-box { position: absolute; bottom: 80px; left: 20px; background: #2c2c2e; padding: 20px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); width: 320px; display: none; }
+        .call-btn { padding: 8px 16px; border: none; border-radius: 5px; color: white; cursor: pointer; font-weight: bold; }
+        .btn-green { background: #34c759; }
+        .btn-red { background: #ff3b30; }
+        .file-upload-box { margin-top: 15px; padding-top: 15px; border-top: 1px solid #444; }
+    </style>
+</head>
+<body>
+
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>Admin Login</h2>
+            <input type="password" id="adminPassword" placeholder="Enter Password">
+            <button onclick="login()">Access Panel</button>
+        </div>
+    </div>
+
+    <div id="sidebar">
+        <div class="sidebar-header">Visitors</div>
+        <input type="text" id="searchInput" placeholder="Search email..." onkeyup="filterVisitors()">
+        <div id="visitorList"></div>
+    </div>
+
+    <div id="main-panel">
+        <div id="chatHeader">
+            <h3 id="currentChatEmail">Select a visitor</h3>
+            <button class="call-btn btn-green" onclick="callVisitor()" style="display:none;" id="initCallBtn">📞 Call Visitor</button>
+        </div>
+        <div id="chatBody"></div>
+        
+        <div id="inputArea" style="display:none;">
+            <input type="file" id="adminImageInput" accept="image/*" style="display:none;" onchange="sendAdminImage(this)">
+            <button onclick="document.getElementById('adminImageInput').click()">📸</button>
+            <input type="text" id="adminMsgInput" placeholder="Type a message...">
+            <button onclick="sendAdminText()">Send</button>
+        </div>
+
+        <!-- Call Control Box (Bottom Left) -->
+        <div id="call-control-box">
+            <h4 style="margin-top:0;">Call Control</h4>
+            <div id="callStatus">Status: Waiting...</div>
+            
+            <div id="incomingActions" style="margin-top: 10px; display: none;">
+                <button class="call-btn btn-green" onclick="acceptCall()">Accept</button>
+                <button class="call-btn btn-red" onclick="endCall()">Decline</button>
+            </div>
+
+            <div class="file-upload-box" id="injectionBox" style="display: none;">
+                <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 5px;">Upload Video to Inject:</label>
+                <input type="file" id="momentVideoInput" accept="video/*" onchange="uploadAndInject(this)" style="width: 100%; color: white;">
+            </div>
+            
+            <button class="call-btn btn-red" onclick="endCall()" style="margin-top: 15px; width: 100%;">End Call</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let selectedVisitor = null;
+
+        function login() {
+            const pwd = document.getElementById('adminPassword').value;
+            socket.emit('admin-login', pwd);
+        }
+
+        socket.on('admin-auth-success', (users) => {
+            document.getElementById('login-overlay').style.display = 'none';
+            renderVisitorList(users);
+        });
+
+        socket.on('admin-auth-fail', () => alert('Incorrect Password'));
+
+        // --- Sidebar Management ---
+        function renderVisitorList(users) {
+            const list = document.getElementById('visitorList');
+            list.innerHTML = '';
+            users.forEach(user => {
+                const div = document.createElement('div');
+                div.className = 'visitor-item';
+                div.setAttribute('data-email', user.email);
+                div.onclick = () => selectVisitor(user.email);
+                
+                const time = new Date(user.lastSeen).toLocaleString();
+                div.innerHTML = `
+                    <div>
+                        <strong>${user.email}</strong><br>
+                        <span style="font-size: 11px; color: gray;">${user.isOnline ? 'Online' : 'Last: ' + time}</span>
+                    </div>
+                    <span class="status-dot ${user.isOnline ? 'online' : ''}"></span>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function filterVisitors() {
+            const filter = document.getElementById('searchInput').value.toLowerCase();
+            const items = document.getElementsByClassName('visitor-item');
+            for (let i = 0; i < items.length; i++) {
+                const email = items[i].getAttribute('data-email').toLowerCase();
+                items[i].style.display = email.includes(filter) ? "flex" : "none";
+            }
+        }
+
+        socket.on('update-visitor-list', renderVisitorList);
+        socket.on('visitor-status-change', (data) => { /* Optional: fetch list again to refresh dots */ });
+
+        // --- Chat Management ---
+        function selectVisitor(email) {
+            selectedVisitor = email;
+            document.getElementById('currentChatEmail').innerText = email;
+            document.getElementById('inputArea').style.display = 'flex';
+            document.getElementById('initCallBtn').style.display = 'block';
+            document.getElementById('chatBody').innerHTML = ''; // Clear current
+            // In a full implementation, you'd emit a request to fetch history specifically for admin view here.
+        }
+
+        function appendAdminMsg(msg) {
+            if (msg.email !== selectedVisitor) return;
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${msg.sender === 'admin' ? 'admin' : 'visitor'}`;
+            if (msg.type === 'text') bubble.innerText = msg.content;
+            else if (msg.type === 'image') bubble.innerHTML = `<img src="${msg.content}">`;
+            
+            const chatBody = document.getElementById('chatBody');
+            chatBody.appendChild(bubble);
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        socket.on('receive-message', appendAdminMsg);
+
+        function sendAdminText() {
+            const input = document.getElementById('adminMsgInput');
+            if (!input.value || !selectedVisitor) return;
+            const msg = { email: selectedVisitor, sender: 'admin', type: 'text', content: input.value };
+            appendAdminMsg(msg);
+            socket.emit('send-message', msg);
+            input.value = '';
+        }
+
+        function sendAdminImage(input) {
+            const file = input.files[0];
+            if (!file || !selectedVisitor) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const msg = { email: selectedVisitor, sender: 'admin', type: 'image', content: e.target.result };
+                appendAdminMsg(msg);
+                socket.emit('send-message', msg);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- Video Call Injection Management ---
+        const callBox = document.getElementById('call-control-box');
+
+        // Admin initiates call
+        function callVisitor() {
+            if (!selectedVisitor) return;
+            callBox.style.display = 'block';
+            document.getElementById('callStatus').innerText = 'Calling visitor... Waiting for them to answer.';
+            document.getElementById('incomingActions').style.display = 'none';
+            document.getElementById('injectionBox').style.display = 'none';
+            socket.emit('admin-call-visitor', selectedVisitor);
+        }
+
+        // Visitor initiates call
+        socket.on('incoming-call-from-visitor', (email) => {
+            if (selectedVisitor !== email) selectVisitor(email);
+            callBox.style.display = 'block';
+            document.getElementById('callStatus').innerText = 'Incoming call from visitor...';
+            document.getElementById('incomingActions').style.display = 'block';
+            document.getElementById('injectionBox').style.display = 'none';
+        });
+
+        // Visitor answered admin's call
+        socket.on('visitor-answered-call', (email) => {
+            document.getElementById('callStatus').innerText = 'Visitor answered. Choose video below.';
+            document.getElementById('injectionBox').style.display = 'block';
+        });
+
+        // Admin manually accepts incoming call
+        function acceptCall() {
+            socket.emit('admin-accept-call', selectedVisitor);
+            document.getElementById('callStatus').innerText = 'Call connected. Upload video to start injection.';
+            document.getElementById('incomingActions').style.display = 'none';
+            document.getElementById('injectionBox').style.display = 'block';
+        }
+
+        // Core Trigger: The moment file is uploaded, send base64 over socket
+        function uploadAndInject(input) {
+            const file = input.files[0];
+            if (!file || !selectedVisitor) return;
+            
+            document.getElementById('callStatus').innerText = 'Loading and injecting video into visitor screen...';
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                socket.emit('inject-video', {
+                    email: selectedVisitor,
+                    videoData: e.target.result
+                });
+                document.getElementById('callStatus').innerText = 'Video playing live on visitor screen.';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function endCall() {
+            if (selectedVisitor) {
+                socket.emit('end-call', { email: selectedVisitor, status: 'completed', duration: 0 });
+            }
+            callBox.style.display = 'none';
+            document.getElementById('momentVideoInput').value = ""; // reset file input
+        }
+
+        socket.on('call-ended', () => {
+            callBox.style.display = 'none';
+            document.getElementById('momentVideoInput').value = "";
+        });
+
+    </script>
+</body>
+</html>
