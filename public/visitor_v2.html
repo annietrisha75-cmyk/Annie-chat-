@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Service</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #0b0e14; color: #fff; display: flex; flex-direction: column; height: 100vh; }
+        header { background: #161b22; padding: 14px; border-bottom: 1px solid #21262d; display: flex; justify-content: space-between; align-items: center; }
+        #video-container { display: none; position: relative; background: #000; height: 220px; border-bottom: 1px solid #21262d; }
+        /* 5. Playsinline and mobile video rendering */
+        video { width: 100%; height: 100%; object-fit: cover; }
+        #localVideo { position: absolute; right: 10px; bottom: 10px; width: 80px; height: 100px; border-radius: 8px; border: 2px solid #007aff; z-index: 2; }
+        #chat-box { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 75%; padding: 10px 14px; border-radius: 16px; font-size: 15px; word-break: break-word; }
+        .message.visitor { align-self: flex-end; background-color: #007aff; color: white; border-bottom-right-radius: 2px; }
+        .message.admin { align-self: flex-start; background-color: #21262d; color: #e6edf3; border-bottom-left-radius: 2px; }
+        footer { padding: 12px; background: #161b22; border-top: 1px solid #21262d; display: flex; gap: 8px; }
+        input { flex: 1; padding: 12px; border-radius: 20px; border: 1px solid #30363d; background: #0d1117; color: white; outline: none; }
+        button { background: #007aff; border: none; color: white; padding: 10px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; }
+        button.call-btn { background: #238636; }
+        button.end-btn { background: #da3633; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <span>Support Service</span>
+        <button id="callToggleBtn" class="call-btn" onclick="toggleCall()">Start Call</button>
+    </header>
+
+    <div id="video-container">
+        <!-- 5. Cross-browser mobile camera flags -->
+        <video id="remoteVideo" autoplay playsinline></video>
+        <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+
+    <div id="chat-box"></div>
+
+    <footer>
+        <input type="text" id="msgInput" placeholder="Message..." onkeypress="if(event.key==='Enter') sendMessage()" />
+        <button onclick="sendMessage()">Send</button>
+    </footer>
+
+    <script>
+        // 2. Visitor Auto-Login via localStorage
+        let visitorId = localStorage.getItem('v2_visitor_id');
+        let visitorEmail = localStorage.getItem('v2_visitor_email');
+
+        if (!visitorId) {
+            visitorId = 'user_' + Math.random().toString(36).substring(2, 9);
+            localStorage.setItem('v2_visitor_id', visitorId);
+        }
+        if (!visitorEmail) {
+            visitorEmail = 'visitor_' + visitorId.substring(5) + '@app.local';
+            localStorage.setItem('v2_visitor_email', visitorEmail);
+        }
+
+        const socket = io();
+        const chatBox = document.getElementById('chat-box');
+        let localStream = null;
+        let peerConnection = null;
+        let inCall = false;
+
+        const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        socket.on('connect', () => {
+            socket.emit('register_visitor', { visitorId, email: visitorEmail });
+        });
+
+        socket.on('chat_history', (messages) => {
+            chatBox.innerHTML = '';
+            messages.forEach(appendMessage);
+            scrollToBottom();
+        });
+
+        // 4. Instant Message Delivery
+        socket.on('new_message', (msg) => {
+            if (msg.visitor_id === visitorId) {
+                appendMessage(msg);
+                scrollToBottom();
+            }
+        });
+
+        function appendMessage(msg) {
+            const div = document.createElement('div');
+            div.className = `message ${msg.sender === 'visitor' ? 'visitor' : 'admin'}`;
+            div.textContent = msg.text;
+            chatBox.appendChild(div);
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('msgInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            socket.emit('send_message', {
+                visitorId: visitorId,
+                text: text,
+                sender: 'visitor'
+            });
+
+            input.value = '';
+        }
+
+        function scrollToBottom() {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        // 3 & 5. Camera Permissions, WebRTC, and Full Cleanup Routine
+        async function startCamera() {
+            try {
+                // normalized API detection for cross-browser support
+                const constraints = { video: { facingMode: 'user' }, audio: true };
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                document.getElementById('localVideo').srcObject = localStream;
+                document.getElementById('video-container').style.display = 'block';
+            } catch (err) {
+                alert('Camera/Microphone access error: ' + err.message);
+                throw err;
+            }
+        }
+
+        async function toggleCall() {
+            if (inCall) {
+                endCall(true);
+            } else {
+                await startCamera();
+                createPeerConnection();
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                socket.emit('signal', { signal: offer });
+                
+                inCall = true;
+                updateCallUI(true);
+            }
+        }
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+            
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('signal', { signal: { candidate: event.candidate } });
+                }
+            };
+
+            peerConnection.ontrack = (event) => {
+                document.getElementById('remoteVideo').srcObject = event.streams[0];
+            };
+        }
+
+        socket.on('signal', async (data) => {
+            if (data.signal.sdp) {
+                if (!peerConnection) {
+                    await startCamera();
+                    createPeerConnection();
+                    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+                }
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.signal));
+                if (data.signal.type === 'offer') {
+                    const answer = await peerConnection.createAnswer();
+                    await peerConnection.setLocalDescription(answer);
+                    socket.emit('signal', { signal: answer });
+                    inCall = true;
+                    updateCallUI(true);
+                }
+            } else if (data.signal.candidate && peerConnection) {
+                await peerConnection.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
+            }
+        });
+
+        socket.on('end_call', () => {
+            endCall(false);
+        });
+
+        // 3. Complete Call Cleanup Fix (Stops tracks, resets handles, prevents hang/freeze)
+        function endCall(notifyPeer = true) {
+            if (notifyPeer) socket.emit('end_call');
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+
+            if (peerConnection) {
+                peerConnection.ontrack = null;
+                peerConnection.onicecandidate = null;
+                peerConnection.close();
+                peerConnection = null;
+            }
+
+            document.getElementById('localVideo').srcObject = null;
+            document.getElementById('remoteVideo').srcObject = null;
+            document.getElementById('video-container').style.display = 'none';
+
+            inCall = false;
+            updateCallUI(false);
+        }
+
+        function updateCallUI(active) {
+            const btn = document.getElementById('callToggleBtn');
+            btn.textContent = active ? 'End Call' : 'Start Call';
+            btn.className = active ? 'end-btn' : 'call-btn';
+        }
+    </script>
+</body>
+</html>
