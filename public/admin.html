@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin Dashboard</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background: #121212; color: #fff; height: 100vh; display: flex; overflow: hidden; }
+
+        #login-screen { position: fixed; inset: 0; background: #121212; z-index: 1000; display: flex; justify-content: center; align-items: center; }
+        .login-box { background: #1c1c1e; padding: 30px; border-radius: 12px; text-align: center; width: 320px; }
+        .login-box input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; }
+        .login-box button { width: 100%; padding: 12px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
+
+        #admin-panel { display: none; width: 100vw; height: 100vh; }
+        .sidebar { width: 320px; background: #1c1c1e; border-right: 1px solid #2c2c2e; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #2c2c2e; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .sidebar-header input { flex: 1; padding: 8px 12px; border-radius: 6px; border: none; background: #2c2c2e; color: #fff; outline: none; }
+        .visitor-list { flex: 1; overflow-y: auto; }
+        .visitor-card { padding: 14px 16px; border-bottom: 1px solid #2c2c2e; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .visitor-card.active { background: #2c2c2e; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; flex-shrink: 0; }
+        .status-dot.online { background: #34c759; }
+
+        .main-chat { flex: 1; display: flex; flex-direction: column; background: #0e0e0e; position: relative; }
+        .chat-header { padding: 16px; background: #1c1c1e; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; }
+        .messages-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+
+        .msg-bubble { max-width: 70%; padding: 10px 14px; border-radius: 12px; font-size: 14px; word-break: break-word; }
+        .msg-bubble.incoming { background: #2c2c2e; align-self: flex-start; }
+        .msg-bubble.outgoing { background: #007aff; align-self: flex-end; }
+        .msg-bubble img { max-width: 100%; border-radius: 6px; }
+
+        .input-bar { padding: 16px; background: #1c1c1e; display: flex; gap: 10px; align-items: center; }
+        .input-bar input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; }
+        .input-bar button { padding: 12px 20px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
+
+        /* Call Controls Panel */
+        #admin-call-box { background: #1c1c1e; padding: 16px; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .call-action-btn { padding: 8px 16px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; }
+
+        /* Delete Thread Action Button */
+        .delete-thread-btn { background: rgba(255, 59, 48, 0.2); color: #ff3b30; border: 1px solid #ff3b30; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
+        .delete-thread-btn:hover { background: #ff3b30; color: #fff; }
+    </style>
+</head>
+<body>
+
+    <!-- LOGIN CONTAINER -->
+    <div id="login-screen">
+        <div class="login-box">
+            <h3>Admin Panel Login</h3>
+            <input type="password" id="adminPassword" placeholder="Enter password (felix123321@)">
+            <button onclick="loginAdmin()">Login</button>
+        </div>
+    </div>
+
+    <!-- MAIN DASHBOARD -->
+    <div id="admin-panel">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <input type="text" id="userSearch" placeholder="Search visitors..." oninput="filterVisitors()">
+            </div>
+            <div class="visitor-list" id="visitorListContainer"></div>
+        </div>
+
+        <div class="main-chat">
+            <div class="chat-header">
+                <div>
+                    <h3 id="currentVisitorEmail">Select a visitor</h3>
+                    <span id="currentVisitorStatus" style="font-size:12px; color:#8e8e93;">---</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button onclick="adminCallVisitor()" class="call-action-btn" style="background:#007aff;">Call Visitor 📞</button>
+                    <button onclick="deleteCurrentConversation()" class="delete-thread-btn" id="deleteChatBtn" style="display:none;">Delete Chat</button>
+                </div>
+            </div>
+
+            <!-- INCOMING/ACTIVE CALL CONTROL BAR -->
+            <div id="admin-call-box">
+                <div>
+                    <strong>Call Control:</strong> <span id="callStateLabel">Idle</span>
+                </div>
+                <div id="callControlButtons">
+                    <button onclick="adminAcceptCall()" class="call-action-btn" style="background:#34c759; display:none;" id="acceptBtn">Accept Call</button>
+                    <button onclick="adminRejectCall()" class="call-action-btn" style="background:#ff3b30; display:none;" id="rejectBtn">Decline</button>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <label style="font-size:12px;">Inject Moment:</label>
+                    <input type="file" id="videoMomentInput" accept="video/*" onchange="uploadAndInjectVideo(this)" style="font-size:12px;">
+                    <button onclick="hangUpCall()" class="call-action-btn" style="background:#ff3b30;">End Call</button>
+                </div>
+            </div>
+
+            <div class="messages-area" id="adminMessagesArea"></div>
+
+            <div class="input-bar">
+                <label style="cursor:pointer; font-size:20px;">📷<input type="file" accept="image/*" style="display:none;" onchange="sendAdminImage(this)"></label>
+                <input type="text" id="adminMsgInput" placeholder="Type a message..." onkeypress="handleAdminKeypress(event)">
+                <button onclick="sendAdminText()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io({
+            pingTimeout: 60000,
+            pingInterval: 25000,
+            transports: ['websocket', 'polling']
+        });
+
+        let selectedVisitorEmail = null;
+        let allVisitors = [];
+        let callStartTime = null;
+        let unreadCounts = {};
+
+        // --- AUDIO NOTIFICATION & HEARTBEAT ---
+        const notificationBeep = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJ_u3+Wb6Z1pknVpUwsjK0N0enV1eHqDgoODgoOHh4aHg4OEhoWFiYiIiJiYmJiYmJicnJycno2NjY6Ojo6Pjo6QkJGRkZKSkpSUlJWVlZZWVla2trb39/f4+Pj8/Pz+/v8A');
+        
+        setInterval(() => {
+            socket.emit('heartbeat');
+        }, 20000);
+
+        socket.on('heartbeat-ack', () => {});
+
+        function playNotificationSound() {
+            try {
+                notificationBeep.currentTime = 0;
+                notificationBeep.play().catch(e => console.log('Audio playback prevented by browser policy'));
+            } catch (err) {}
+        }
+
+        function loginAdmin() {
+            const password = document.getElementById('adminPassword').value;
+            socket.emit('admin-login', { password });
+        }
+
+        socket.on('admin-authenticated', (res) => {
+            if (res.success) {
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('admin-panel').style.display = 'flex';
+            } else {
+                alert(res.message);
+            }
+        });
+
+        socket.on('admin-visitor-list', (users) => {
+            allVisitors = users;
+            renderVisitorList(users);
+        });
+
+        socket.on('visitor-status-change', (data) => {
+            const user = allVisitors.find(u => u.email === data.email);
+            if (user) {
+                user.isOnline = data.isOnline;
+                user.lastSeen = data.lastSeen;
+                renderVisitorList(allVisitors);
+            } else {
+                socket.emit('admin-login', { password: 'felix123321@' });
+            }
+        });
+
+        function renderVisitorList(users) {
+            const container = document.getElementById('visitorListContainer');
+            container.innerHTML = '';
+            
+            if (users.length === 0) {
+                container.innerHTML = '<div style="padding: 20px; text-align: center; color: #8e8e93;">No visitors connected yet.</div>';
+                return;
+            }
+
+            users.forEach(u => {
+                const card = document.createElement('div');
+                card.className = `visitor-card ${selectedVisitorEmail === u.email ? 'active' : ''}`;
+                card.onclick = () => selectVisitor(u);
+                
+                const unreadBadge = unreadCounts[u.email] ? `<span style="background:#007aff; color:#fff; border-radius:50%; padding:2px 6px; font-size:10px; margin-left:6px;">${unreadCounts[u.email]}</span>` : '';
+                
+                card.innerHTML = `
+                    <div style="overflow:hidden;">
+                        <div style="font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${u.email} ${unreadBadge}</div>
+                        <div style="font-size:12px; color:#8e8e93;">${u.lastSeen}</div>
+                    </div>
+                    <div class="status-dot ${u.isOnline ? 'online' : ''}"></div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function filterVisitors() {
+            const q = document.getElementById('userSearch').value.toLowerCase();
+            const filtered = allVisitors.filter(u => u.email.toLowerCase().includes(q));
+            renderVisitorList(filtered);
+        }
+
+        function selectVisitor(user) {
+            selectedVisitorEmail = user.email;
+            unreadCounts[user.email] = 0;
+            document.getElementById('currentVisitorEmail').innerText = user.email;
+            document.getElementById('currentVisitorStatus').innerText = user.isOnline ? 'Online' : user.lastSeen;
+            document.getElementById('deleteChatBtn').style.display = 'block';
+            renderVisitorList(allVisitors);
+            socket.emit('request-visitor-history', { email: user.email });
+        }
+
+        socket.on('admin-visitor-history', (data) => {
+            if (data.email === selectedVisitorEmail) {
+                const area = document.getElementById('adminMessagesArea');
+                area.innerHTML = '';
+                data.messages.forEach(msg => appendAdminMessage(msg));
+            }
+        });
+
+        function sendAdminText() {
+            const input = document.getElementById('adminMsgInput');
+            if (!input.value.trim() || !selectedVisitorEmail) return;
+            socket.emit('send-message', { email: selectedVisitorEmail, sender: 'admin', type: 'text', content: input.value });
+            input.value = '';
+        }
+
+        function handleAdminKeypress(e) {
+            if (e.key === 'Enter') sendAdminText();
+        }
+
+        function sendAdminImage(input) {
+            const file = input.files[0];
+            if (!file || !selectedVisitorEmail) return;
+            
+            if (file.size > 10 * 1024 * 1024) {
+                alert('File size exceeds 10MB limit.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                socket.emit('send-message', { email: selectedVisitorEmail, sender: 'admin', type: 'image', content: e.target.result });
+            };
+            reader.readAsDataURL(file);
+        }
+
+        socket.on('receive-message', (msg) => {
+            if (msg.email === selectedVisitorEmail) {
+                appendAdminMessage(msg);
+                playNotificationSound();
+            } else {
+                unreadCounts[msg.email] = (unreadCounts[msg.email] || 0) + 1;
+                renderVisitorList(allVisitors);
+                playNotificationSound();
+                document.title = `(1) New Message - Admin Hub`;
+            }
+        });
+
+        window.addEventListener('focus', () => {
+            document.title = 'Admin Dashboard';
+        });
+
+        function appendAdminMessage(msg) {
+            const area = document.getElementById('adminMessagesArea');
+            const bubble = document.createElement('div');
+            bubble.className = `msg-bubble ${msg.sender === 'admin' ? 'outgoing' : 'incoming'}`;
+            if (msg.type === 'text') {
+                bubble.innerText = msg.content;
+            } else {
+                bubble.innerHTML = `<img src="${msg.content}"/>`;
+            }
+            area.appendChild(bubble);
+            area.scrollTop = area.scrollHeight;
+        }
+
+        // --- CONVERSATION MANAGEMENT & DELETION ---
+        function deleteCurrentConversation() {
+            if (!selectedVisitorEmail) return;
+            if (!confirm(`Are you sure you want to completely delete the conversation and data for ${selectedVisitorEmail}?`)) return;
+
+            socket.emit('delete-conversation', { email: selectedVisitorEmail });
+            document.getElementById('adminMessagesArea').innerHTML = '';
+            document.getElementById('currentVisitorEmail').innerText = 'Select a visitor';
+            document.getElementById('currentVisitorStatus').innerText = '---';
+            document.getElementById('deleteChatBtn').style.display = 'none';
+            selectedVisitorEmail = null;
+        }
+
+        // --- CALL CONTROL ACTIONS WITH DEVICE PERMISSION PRE-CHECK ---
+        async function adminCallVisitor() {
+            if (!selectedVisitorEmail) return alert("Select a visitor first");
+            
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            } catch (err) {
+                alert("Camera/Microphone access is required to initiate video calls.");
+                return;
+            }
+
+            document.getElementById('callStateLabel').innerText = "Calling visitor...";
+            socket.emit('initiate-call', { from: 'admin', toEmail: selectedVisitorEmail });
+        }
+
+        socket.on('incoming-call-from-visitor', async (data) => {
+            selectedVisitorEmail = data.email;
+            document.getElementById('currentVisitorEmail').innerText = data.email;
+            document.getElementById('callStateLabel').innerText = `Incoming call from ${data.email}`;
+            document.getElementById('acceptBtn').style.display = 'inline-block';
+            document.getElementById('rejectBtn').style.display = 'inline-block';
+            playNotificationSound();
+        });
+
+        async function adminAcceptCall() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            } catch (err) {
+                alert("Camera/Microphone permissions are required to accept calls.");
+                return;
+            }
+
+            document.getElementById('acceptBtn').style.display = 'none';
+            document.getElementById('rejectBtn').style.display = 'none';
+            document.getElementById('callStateLabel').innerText = "Connected. Inject video below.";
+            callStartTime = Date.now();
+            socket.emit('accept-call', { targetEmail: selectedVisitorEmail, acceptedBy: 'admin' });
+        }
+
+        function adminRejectCall() {
+            document.getElementById('acceptBtn').style.display = 'none';
+            document.getElementById('rejectBtn').style.display = 'none';
+            document.getElementById('callStateLabel').innerText = "Call Declined";
+            socket.emit('reject-call', { targetEmail: selectedVisitorEmail });
+        }
+
+        function uploadAndInjectVideo(input) {
+            const file = input.files[0];
+            if (!file || !selectedVisitorEmail) return;
+
+            if (file.size > 50 * 1024 * 1024) {
+                alert('Video file size exceeds recommended limit (50MB).');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                socket.emit('inject-video', { targetEmail: selectedVisitorEmail, videoData: e.target.result });
+                document.getElementById('callStateLabel').innerText = "Video moment injected & playing!";
+            };
+            reader.readAsDataURL(file);
+        }
+
+        socket.on('video-playback-confirmed', (data) => {
+            if (data.email === selectedVisitorEmail) {
+                document.getElementById('callStateLabel').innerText = "Visitor playing video stream successfully.";
+            }
+        });
+
+        function hangUpCall() {
+            const duration = callStartTime ? Math.round((Date.now() - callStartTime) / 1000) : 0;
+            socket.emit('hang-up', { email: selectedVisitorEmail, duration });
+            document.getElementById('callStateLabel').innerText = "Idle";
+            callStartTime = null;
+        }
+
+        socket.on('call-ended-cleanup', () => {
+            document.getElementById('callStateLabel').innerText = "Call Ended";
+            callStartTime = null;
+        });
+
+        socket.on('call-rejected', () => {
+            document.getElementById('callStateLabel').innerText = "Call was rejected";
+        });
+    </script>
+</body>
+</html>
