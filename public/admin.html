@@ -52,7 +52,7 @@
     <div id="login-screen">
         <div class="login-box">
             <h3>Admin Panel Login</h3>
-            <input type="password" id="adminPassword" placeholder="Enter password (felix123321@)">
+            <input type="password" id="adminPassword" placeholder="Enter admin password">
             <button onclick="loginAdmin()">Login</button>
         </div>
     </div>
@@ -158,7 +158,11 @@
                 user.lastSeen = data.lastSeen;
                 renderVisitorList(allVisitors);
             } else {
-                socket.emit('admin-login', { password: 'felix123321@' });
+                // Keep session secure if list is out of sync
+                const currentPassword = document.getElementById('adminPassword').value;
+                if(currentPassword) {
+                    socket.emit('admin-login', { password: currentPassword });
+                }
             }
         });
 
