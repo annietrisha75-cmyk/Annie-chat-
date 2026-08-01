@@ -1,0 +1,45 @@
+/* ========================================================================== */
+/* AUTOMATIC UNIVERSAL KEYBOARD & VIEWPORT FIX                                */
+/* ========================================================================== */
+
+html, body {
+    width: 100vw;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    position: fixed;
+}
+
+.chat-container, #chat-page, .app-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.messages-container, #messages, .chat-history {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.input-container, .chat-input-bar, form#chat-form {
+    flex-shrink: 0;
+    width: 100%;
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: relative;
+    z-index: 99999;
+}
+
+input[type="text"], textarea {
+    font-size: 16px !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
