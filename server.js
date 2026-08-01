@@ -15,16 +15,19 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const app = express();
 const server = http.createServer(app);
+
+// Configured for global accessibility and large video payloads
 const io = new Server(server, {
     maxHttpBufferSize: 1e8, // 100MB limit to handle video data injection payloads
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
+    cors: { origin: "*" }
 });
 
 // --- RATE LIMITING & BRUTE-FORCE PROTECTION ---
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    max: 200, // Boosted slightly to ensure smooth global messaging
     standardHeaders: true,
     legacyHeaders: false,
 });
@@ -67,6 +70,7 @@ const CallLog = mongoose.model('CallLog', CallLogSchema);
 // Serve static assets from the /public folder
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // Memory maps to track active socket connections
 const activeVisitors = new Map(); // email -> socket.id
@@ -110,9 +114,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- ADMIN AUTHENTICATION ---
+    // --- ADMIN AUTHENTICATION (NEW PASSWORD IMPLEMENTED) ---
     socket.on('admin-login', async ({ password }) => {
-        if (password === 'felix123321@') {
+        if (password === 'reeb911422@') {
             activeAdminSocket = socket.id;
             socket.emit('admin-authenticated', { success: true });
             sendAdminVisitorList();
@@ -121,31 +125,31 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- MESSAGING ENGINE ---
+    // --- GLOBAL MESSAGING ENGINE ---
     socket.on('send-message', async ({ email, sender, type, content }) => {
         if (!email || !content) return;
 
         const newMsg = await Message.create({ email, sender, type, content });
         
-        // Dispatch to Visitor socket if online
+        // Dispatch to Visitor socket if online so they see it globally
         const visitorSocketId = activeVisitors.get(email);
         if (visitorSocketId) {
             io.to(visitorSocketId).emit('receive-message', newMsg);
         }
 
-        // Dispatch to Admin socket if online
+        // Dispatch to Admin socket so the dashboard mirrors exactly what was sent/received
         if (activeAdminSocket) {
             io.to(activeAdminSocket).emit('receive-message', newMsg);
         }
     });
 
-    // --- SETTINGS ENGINE ---
+    // --- SETTINGS ENGINE (KEPT INTACT) ---
     socket.on('update-custom-name', async ({ email, newName }) => {
         // Update globally across database users so all threads sync the new custom admin name
         await User.updateMany({}, { customAdminName: newName });
 
         // Notify all active visitors currently online about the custom name change
-        activeVisitors.forEach((socketId, visitorEmail) => {
+        activeVisitors.forEach((socketId) => {
             const visitorSocket = io.sockets.sockets.get(socketId);
             if (visitorSocket) {
                 visitorSocket.emit('custom-name-updated', { newName });
@@ -175,7 +179,9 @@ io.on('connection', (socket) => {
             }
         } else {
             if (activeAdminSocket) {
+                // Emitting both names to ensure backwards compatibility with any HTML scripts
                 io.to(activeAdminSocket).emit('call-accepted-by-visitor', { email: socket.email });
+                io.to(activeAdminSocket).emit('admin-call-accepted', { email: socket.email });
             }
         }
     });
@@ -208,19 +214,18 @@ io.on('connection', (socket) => {
             await CallLog.create({ email, type: 'completed', duration: duration || 0 });
         }
         const visitorSocketId = activeVisitors.get(email);
-        if (visitorSocketId) visitorSocketId.emit('call-ended-cleanup');
+        if (visitorSocketId) io.to(visitorSocketId).emit('call-ended-cleanup');
         if (activeAdminSocket) io.to(activeAdminSocket).emit('call-ended-cleanup');
     });
 
     socket.on('admin-end-call', ({ email }) => {
         const visitorSocketId = activeVisitors.get(email);
         if (visitorSocketId) {
-            const targetSocket = io.sockets.sockets.get(visitorSocketId);
-            if (targetSocket) targetSocket.emit('call-ended-cleanup');
+            io.to(visitorSocketId).emit('call-ended-cleanup');
         }
     });
 
-    // --- CONVERSATION MANAGEMENT ---
+    // --- CONVERSATION MANAGEMENT (DELETE CHATS KEPT INTACT) ---
     socket.on('delete-conversation', async ({ email }) => {
         if (!email) return;
         await Message.deleteMany({ email });
@@ -260,5 +265,5 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`Server executing seamlessly on port ${PORT}`));
