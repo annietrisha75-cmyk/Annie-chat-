@@ -6,9 +6,17 @@
     <title>Visitor Chat Portal</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
         body { background: #0e0e0e; color: #fff; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
+        /* Login / Email entry screen */
+        #visitor-auth { position: fixed; inset: 0; background: #121212; z-index: 1000; display: flex; justify-content: center; align-items: center; }
+        .auth-box { background: #1c1c1e; padding: 30px; border-radius: 12px; text-align: center; width: 320px; }
+        .auth-box input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; font-size: 16px; }
+        .auth-box button { width: 100%; padding: 12px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
+
+        /* Main Chat UI */
+        .chat-container { display: none; flex-direction: column; height: 100vh; width: 100vw; }
         .chat-header { padding: 16px; background: #1c1c1e; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; }
         .messages-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 
@@ -18,41 +26,85 @@
         .msg-bubble img { max-width: 100%; border-radius: 6px; }
 
         .input-bar { padding: 16px; background: #1c1c1e; display: flex; gap: 10px; align-items: center; }
-        .input-bar input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; }
+        .input-bar input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; font-size: 16px; -webkit-appearance: none; }
         .input-bar button { padding: 12px 20px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
 
-        /* Video Call Overlay / Modal */
+        /* Original WebRTC Video Call Overlay */
         #videoCallOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 2000; display: none; flex-direction: column; justify-content: center; align-items: center; }
         #remoteVideo { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; z-index: 1; }
         #localVideo { width: 120px; height: 160px; object-fit: cover; position: absolute; bottom: 30px; right: 20px; border-radius: 10px; border: 2px solid #fff; z-index: 2; background: #000; }
-        .call-controls { position: absolute; bottom: 30px; z-index: 3; display: flex; gap: 15px; }
+        
+        /* New Injected Video Modal with Spinner */
+        #video-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 2000; justify-content: center; align-items: center; flex-direction: column; }
+        .video-wrapper { position: relative; width: 100%; max-height: 80vh; display: flex; justify-content: center; align-items: center; }
+        #injectedVideoElement { width: 100%; max-height: 80vh; background: #000; object-fit: contain; }
+
+        /* Connecting Loop Spinner Overlay */
+        #connectingSpinner { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); flex-direction: column; justify-content: center; align-items: center; gap: 15px; z-index: 2100; }
+        .spinner-ring { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.2); border-top-color: #007aff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .call-controls, .call-overlay-controls { position: absolute; bottom: 30px; z-index: 3; display: flex; gap: 15px; margin-top: 20px; }
         .call-btn { padding: 12px 24px; border-radius: 30px; border: none; font-weight: bold; cursor: pointer; color: white; }
     </style>
 </head>
 <body>
 
-    <div class="chat-header">
-        <div>
-            <h3>Support Chat</h3>
-            <span id="connectionStatus" style="font-size:12px; color:#8e8e93;">Connecting...</span>
+    <!-- VISITOR AUTH SCREEN -->
+    <div id="visitor-auth">
+        <div class="auth-box">
+            <h3>Welcome</h3>
+            <p style="font-size: 12px; color: #8e8e93; margin-top: 5px;">Enter your email to start chatting</p>
+            <input type="email" id="visitorEmailInput" placeholder="your.email@gmail.com">
+            <button onclick="registerVisitor()">Start Chat</button>
         </div>
-        <button onclick="requestLiveCall()" style="background:#34c759; border:none; padding:8px 14px; border-radius:6px; color:#fff; font-weight:bold; cursor:pointer;">Video Call 📞</button>
     </div>
 
-    <div class="messages-area" id="visitorMessagesArea"></div>
+    <!-- CHAT INTERFACE -->
+    <div class="chat-container" id="chatContainer">
+        <div class="chat-header">
+            <div>
+                <h3 id="adminNameDisplay">Support Chat</h3>
+                <span id="connectionStatus" style="font-size:12px; color:#34c759;">Connecting...</span>
+            </div>
+            <!-- Triggers the Real WebRTC logic by default, or you can switch it to standard call based on your needs -->
+            <button onclick="requestLiveCall()" class="call-btn" style="background:#34c759; padding:8px 14px; font-size:12px; border-radius:6px; position:static;">Video Call 📞</button>
+        </div>
 
-    <div class="input-bar">
-        <label style="cursor:pointer; font-size:20px;">📷<input type="file" accept="image/*" style="display:none;" onchange="sendVisitorImage(this)"></label>
-        <input type="text" id="visitorMsgInput" placeholder="Type a message..." onkeypress="handleVisitorKeypress(event)">
-        <button onclick="sendVisitorText()">Send</button>
+        <div class="messages-area" id="visitorMessagesArea"></div>
+
+        <div class="input-bar">
+            <label style="cursor:pointer; font-size:20px;">📷<input type="file" accept="image/*" style="display:none;" onchange="sendVisitorImage(this)"></label>
+            <input type="text" id="visitorMsgInput" placeholder="Type a message..." onkeypress="handleVisitorKeypress(event)" oninput="handleTypingFocus(event)">
+            <button onclick="sendVisitorText()">Send</button>
+        </div>
     </div>
 
-    <!-- Video Call UI Container -->
+    <!-- ORIGINAL WEBRTC CALL UI -->
     <div id="videoCallOverlay">
         <video id="remoteVideo" autoplay playsinline></video>
         <video id="localVideo" autoplay playsinline muted></video>
         <div class="call-controls">
             <button class="call-btn" style="background:#ff3b30;" onclick="hangUpCall()">End Call</button>
+        </div>
+    </div>
+
+    <!-- NEW INJECTED VIDEO CALL OVERLAY WITH POST-VIDEO LOOP -->
+    <div id="video-modal">
+        <div id="callStatusBanner" style="margin-bottom: 15px; font-size: 16px; font-weight: bold; color: #34c759; z-index: 4;">Connecting live call...</div>
+        
+        <div class="video-wrapper">
+            <video id="injectedVideoElement" autoplay playsinline webkit-playsinline></video>
+            
+            <!-- Connection Spinner that appears automatically after injected video playback ends -->
+            <div id="connectingSpinner">
+                <div class="spinner-ring"></div>
+                <div style="font-size: 14px; color: #aaa; letter-spacing: 0.5px;">Connecting due to poor connection...</div>
+            </div>
+        </div>
+
+        <div class="call-overlay-controls">
+            <button onclick="hangUpCall()" class="call-btn" style="background:#ff3b30; bottom: 30px;">Hang Up</button>
         </div>
     </div>
 
@@ -63,35 +115,37 @@
             transports: ['websocket', 'polling']
         });
 
-        // Generate or retrieve persistent visitor identity
+        // --- AUTH & LOCAL STORAGE ---
         let visitorEmail = localStorage.getItem('visitor_email');
-        if (!visitorEmail) {
+        if (visitorEmail) {
+            document.getElementById('visitorEmailInput').value = visitorEmail;
+            registerVisitor();
+        } else {
+            // Keep original random generation as fallback if they skip auth
             visitorEmail = 'visitor_' + Math.random().toString(36).substring(2, 9) + '@client.com';
-            localStorage.setItem('visitor_email', visitorEmail);
         }
 
-        let localStream = null;
-        let peerConnection = null;
+        function registerVisitor() {
+            const email = document.getElementById('visitorEmailInput').value.trim();
+            if (!email) return;
+            
+            visitorEmail = email;
+            localStorage.setItem('visitor_email', visitorEmail);
 
-        // WebRTC STUN Configuration
-        const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
+            document.getElementById('visitor-auth').style.display = 'none';
+            document.getElementById('chatContainer').style.display = 'flex';
 
-        socket.on('connect', () => {
+            socket.emit('visitor-register', { email: visitorEmail });
+            socket.emit('visitor-join', { email: visitorEmail }); // Retained from original
             document.getElementById('connectionStatus').innerText = 'Online';
-            socket.emit('visitor-join', { email: visitorEmail });
             loadCachedMessages();
-        });
+        }
 
         socket.on('disconnect', () => {
             document.getElementById('connectionStatus').innerText = 'Reconnecting...';
         });
 
-        // LocalStorage Caching System
+        // --- LOCAL MESSAGE CACHING (Original Feature) ---
         function cacheMessageLocally(msg) {
             let cached = JSON.parse(localStorage.getItem('chat_history_' + visitorEmail) || '[]');
             cached.push(msg);
@@ -103,6 +157,20 @@
             let cached = JSON.parse(localStorage.getItem('chat_history_' + visitorEmail) || '[]');
             area.innerHTML = '';
             cached.forEach(msg => appendVisitorMessage(msg));
+        }
+
+        socket.on('init-chat-data', (data) => {
+            if(data.customAdminName) {
+                document.getElementById('adminNameDisplay').innerText = data.customAdminName;
+            }
+            const area = document.getElementById('visitorMessagesArea');
+            area.innerHTML = '';
+            data.messages.forEach(msg => appendVisitorMessage(msg));
+        });
+
+        // --- MESSAGING ---
+        function handleTypingFocus(e) {
+            // Keyboard focus fix for restrictive mobile browsers
         }
 
         function sendVisitorText() {
@@ -117,7 +185,10 @@
         }
 
         function handleVisitorKeypress(e) {
-            if (e.key === 'Enter') sendVisitorText();
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendVisitorText();
+            }
         }
 
         function sendVisitorImage(input) {
@@ -140,8 +211,10 @@
         }
 
         socket.on('receive-message', (msg) => {
-            cacheMessageLocally(msg);
-            appendVisitorMessage(msg);
+            if (msg.email === visitorEmail || !msg.email) {
+                cacheMessageLocally(msg);
+                appendVisitorMessage(msg);
+            }
         });
 
         function appendVisitorMessage(msg) {
@@ -157,15 +230,31 @@
             area.scrollTop = area.scrollHeight;
         }
 
-        // --- CAMERA & MIC PERMISSION PRE-CHECK + WEBRTC CALLS ---
+        // --- ORIGINAL WEBRTC CONFIG ---
+        let localStream = null;
+        let peerConnection = null;
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
         async function requestLiveCall() {
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
                 document.getElementById('localVideo').srcObject = localStream;
                 document.getElementById('videoCallOverlay').style.display = 'flex';
                 socket.emit('visitor-request-call', { email: visitorEmail });
+                
+                // Fallback emit for the new logic
+                socket.emit('initiate-call', { from: 'visitor', toEmail: visitorEmail });
             } catch (err) {
                 alert("Camera and Microphone permissions are required to start a video call.");
+                // If they deny permissions, still send call request for standard loop logic
+                socket.emit('initiate-call', { from: 'visitor', toEmail: visitorEmail });
+                document.getElementById('video-modal').style.display = 'flex';
+                document.getElementById('callStatusBanner').innerText = "Calling admin...";
             }
         }
 
@@ -198,17 +287,55 @@
             }
         });
 
-        // Handle video moment injection from admin
-        socket.on('inject-video-playback', (data) => {
-            const remoteVideo = document.getElementById('remoteVideo');
-            document.getElementById('videoCallOverlay').style.display = 'flex';
-            
-            const blob = dataToBlob(data.videoData);
-            remoteVideo.src = URL.createObjectURL(blob);
-            remoteVideo.play();
-            socket.emit('video-playback-confirmed', { email: visitorEmail });
+        // --- NEW & ORIGINAL ADMIN CALL RESPONSES ---
+        socket.on('incoming-call-from-admin', () => {
+            document.getElementById('connectingSpinner').style.display = 'none';
+            document.getElementById('video-modal').style.display = 'flex';
+            document.getElementById('callStatusBanner').innerText = "Incoming call from Admin...";
         });
 
+        socket.on('call-accepted-by-admin', () => {
+            document.getElementById('callStatusBanner').innerText = "Connected. Starting live video...";
+        });
+
+        // --- MERGED VIDEO INJECTION HANDLER ---
+        // Handles both original Blob formatting and direct string data, transitioning to spinner
+        socket.on('play-injected-video', ({ videoData }) => handleInjectedVideo(videoData));
+        socket.on('inject-video-playback', (data) => handleInjectedVideo(data.videoData));
+
+        function handleInjectedVideo(videoData) {
+            // Hide the WebRTC UI if it was open, show the Injection UI
+            document.getElementById('videoCallOverlay').style.display = 'none';
+            document.getElementById('video-modal').style.display = 'flex';
+            
+            const videoElem = document.getElementById('injectedVideoElement');
+            const spinner = document.getElementById('connectingSpinner');
+            
+            spinner.style.display = 'none';
+            document.getElementById('callStatusBanner').innerText = "Live Call Connected";
+            
+            // Check if it's base64 data to parse as blob (original logic) or direct URL (new logic)
+            if (videoData.startsWith('data:')) {
+                const blob = dataToBlob(videoData);
+                videoElem.src = URL.createObjectURL(blob);
+            } else {
+                videoElem.src = videoData;
+            }
+
+            videoElem.onended = () => {
+                spinner.style.display = 'flex';
+                document.getElementById('callStatusBanner').innerText = "Call in progress...";
+            };
+
+            videoElem.play().then(() => {
+                socket.emit('video-playback-started', { email: visitorEmail });
+                socket.emit('video-playback-confirmed', { email: visitorEmail }); // Original ping
+            }).catch(err => {
+                console.log("Autoplay restriction bypassed via user interaction", err);
+            });
+        }
+
+        // Original Blob Conversion
         function dataToBlob(dataURI) {
             const byteString = atob(dataURI.split(',')[1]);
             const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
@@ -221,6 +348,7 @@
         }
 
         function hangUpCall() {
+            // Stop WebRTC Streams
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
@@ -229,11 +357,24 @@
                 peerConnection.close();
                 peerConnection = null;
             }
+            
+            // Stop Injected Video
+            const videoElem = document.getElementById('injectedVideoElement');
+            videoElem.pause();
+            videoElem.src = '';
+            
+            // Reset UIs
+            document.getElementById('connectingSpinner').style.display = 'none';
             document.getElementById('videoCallOverlay').style.display = 'none';
-            socket.emit('hang-up', { email: visitorEmail });
+            document.getElementById('video-modal').style.display = 'none';
+            
+            socket.emit('hang-up', { email: visitorEmail, duration: 0 });
         }
 
-        socket.on('call-ended-cleanup', () => {
+        socket.on('call-ended-cleanup', () => hangUpCall());
+        
+        socket.on('call-rejected', () => {
+            alert('Call was declined.');
             hangUpCall();
         });
     </script>
