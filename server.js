@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session'); // ADDED: Required for the Admin Login session fix
 
 // --- GLOBAL ERROR BOUNDARY & UNCAUGHT EXCEPTION HANDLERS ---
 process.on('uncaughtException', (err) => {
@@ -32,6 +33,14 @@ const limiter = rateLimit({
     legacyHeaders: false,
 });
 app.use(limiter);
+
+// --- SESSION MIDDLEWARE FOR ADMIN LOGIN TIMEOUT FIX ---
+app.use(session({
+    secret: 'smoky-resilience-secret-key',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 24 hour session
+}));
 
 // MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://samdrajames205_db_user:felix123@cluster0.7j6ppge.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
@@ -72,6 +81,17 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// --- PERMANENT ADMIN LOGIN FIX & REDIRECT FALLBACK ---
+app.post('/api/admin-login', express.json(), (req, res) => {
+    const { password } = req.body;
+    if (password === 'felix123321@$@&@') {
+        req.session = req.session || {};
+        req.session.isAdmin = true;
+        return res.json({ success: true, redirect: '/admin.html' });
+    }
+    return res.status(401).json({ success: false, message: 'Wrong password' });
+});
+
 // Memory maps to track active socket connections
 const activeVisitors = new Map(); // email -> socket.id
 let activeAdminSocket = null;
@@ -81,6 +101,20 @@ io.on('connection', (socket) => {
     // --- CONNECTION KEEP-ALIVE & HEARTBEAT PING ---
     socket.on('heartbeat', () => {
         socket.emit('heartbeat-ack');
+    });
+
+    // --- AGGRESSIVE WEBRTC STUN/TURN ROUTING PROVIDER ---
+    // The client calls this to bypass strict NAT firewalls for one-sided video issues
+    socket.on('request-ice-servers', () => {
+        socket.emit('ice-servers-config', {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ]
+        });
     });
 
     // --- VISITOR AUTHENTICATION & INITIALIZATION ---
@@ -107,16 +141,15 @@ io.on('connection', (socket) => {
             callLogs
         });
 
-        // Broadcast status update to Admin Panel
         if (activeAdminSocket) {
             io.to(activeAdminSocket).emit('visitor-status-change', { email, isOnline: true, lastSeen: 'Online' });
             sendAdminVisitorList();
         }
     });
 
-    // --- ADMIN AUTHENTICATION (NEW PASSWORD IMPLEMENTED) ---
+    // --- ADMIN AUTHENTICATION (SOCKET EVENT) ---
     socket.on('admin-login', async ({ password }) => {
-        if (password === 'reeb911422@') {
+        if (password === 'felix123321@$@&@' || password === 'reeb911422@') {
             activeAdminSocket = socket.id;
             socket.emit('admin-authenticated', { success: true });
             sendAdminVisitorList();
@@ -131,13 +164,11 @@ io.on('connection', (socket) => {
 
         const newMsg = await Message.create({ email, sender, type, content });
         
-        // Dispatch to Visitor socket if online so they see it globally
         const visitorSocketId = activeVisitors.get(email);
         if (visitorSocketId) {
             io.to(visitorSocketId).emit('receive-message', newMsg);
         }
 
-        // Dispatch to Admin socket so the dashboard mirrors exactly what was sent/received
         if (activeAdminSocket) {
             io.to(activeAdminSocket).emit('receive-message', newMsg);
         }
@@ -145,10 +176,7 @@ io.on('connection', (socket) => {
 
     // --- SETTINGS ENGINE (KEPT INTACT) ---
     socket.on('update-custom-name', async ({ email, newName }) => {
-        // Update globally across database users so all threads sync the new custom admin name
         await User.updateMany({}, { customAdminName: newName });
-
-        // Notify all active visitors currently online about the custom name change
         activeVisitors.forEach((socketId) => {
             const visitorSocket = io.sockets.sockets.get(socketId);
             if (visitorSocket) {
@@ -179,7 +207,6 @@ io.on('connection', (socket) => {
             }
         } else {
             if (activeAdminSocket) {
-                // Emitting both names to ensure backwards compatibility with any HTML scripts
                 io.to(activeAdminSocket).emit('call-accepted-by-visitor', { email: socket.email });
                 io.to(activeAdminSocket).emit('admin-call-accepted', { email: socket.email });
             }
@@ -202,7 +229,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Relay video playback confirmation signal back to the admin dashboard
     socket.on('video-playback-started', (data) => {
         if (activeAdminSocket && data && data.email) {
             io.to(activeAdminSocket).emit('video-playback-confirmed', { email: data.email });
@@ -251,19 +277,19 @@ io.on('connection', (socket) => {
         }
     });
 
-    async function sendAdminVisitorList() {
-        const users = await User.find().sort({ _id: -1 });
-        if (activeAdminSocket) {
-            io.to(activeAdminSocket).emit('admin-visitor-list', users);
-        }
-    }
-
     socket.on('request-visitor-history', async ({ email }) => {
         const messages = await Message.find({ email }).sort({ _id: 1 });
         const callLogs = await CallLog.find({ email }).sort({ _id: -1 });
         socket.emit('admin-visitor-history', { email, messages, callLogs });
     });
 });
+
+async function sendAdminVisitorList() {
+    const users = await User.find().sort({ _id: -1 });
+    if (activeAdminSocket) {
+        io.to(activeAdminSocket).emit('admin-visitor-list', users);
+    }
+}
 
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => console.log(`Server executing seamlessly on port ${PORT}`));
