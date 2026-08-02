@@ -1,56 +1,67 @@
-/* Universal Bottom Bar Lift & Viewport Protection */
+/* Universal Android & Samsung Display Optimization */
+* {
+    box-sizing: border-box;
+}
+
 html, body {
+    width: 100% !important;
     height: 100% !important;
-    height: 100dvh !important;
     margin: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
-    
-    /* SMOKY PERFORMANCE TIER 1: Touch & Scroll Optimization */
-    overscroll-behavior-y: none !important; /* Prevents rubber-banding & pull-to-refresh */
-    -webkit-overflow-scrolling: touch !important; /* Momentum scrolling */
-    -webkit-font-smoothing: antialiased !important; /* Crisp text rendering */
+    background-color: #121212 !important;
+    position: fixed !important;
 }
 
-/* SMOKY PERFORMANCE TIER 2: GPU Isolation & Memory Hinting for the Chat Window */
-#chat-container, .chat-container, chat-window, .main-chat-area {
+/* Force chat interface to occupy the exact viewport correctly */
+#admin-panel, #chat-container, .chat-container, .main-chat, .main-chat-area {
     position: absolute !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    bottom: env(safe-area-inset-bottom, 20px) !important;
-    height: auto !important;
-    max-height: calc(100dvh - env(safe-area-inset-bottom, 20px)) !important;
-    
-    /* Hardware acceleration & layout isolation */
-    contain: layout style paint !important; 
-    will-change: transform, opacity !important;
-    transform: translateZ(0) !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
 }
 
-/* Force message input bar to shift up and remain instantly responsive */
-#chat-input-area, .chat-input-bar, .input-container, footer, form#message-form {
-    position: sticky !important;
-    bottom: 24px !important;
+/* Messages scroll area expands cleanly in the middle */
+.messages-area, #messagesContainer, #adminMessagesArea {
+    flex: 1 !important;
+    width: 100% !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 20px !important;
+}
+
+/* 
+  Absolute Bottom Lock for Android / Samsung Browsers
+  This guarantees the input box stays safely above physical or software navigation buttons 
+*/
+.input-bar, #chat-input-area, .chat-input-bar, .input-container, footer, form#message-form {
+    position: absolute !important;
+    bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    z-index: 999999 !important;
-    background-color: #1c1c1c !important;
-    padding-bottom: max(20px, env(safe-area-inset-bottom)) !important;
-    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.5) !important;
-    
-    /* Hardware promotion for input areas */
-    transform: translateZ(0) !important;
+    width: 100% !important;
+    z-index: 9999999 !important;
+    background-color: #1c1c1e !important;
+    padding: 12px 16px 20px 16px !important;
+    display: flex !important;
+    gap: 10px !important;
+    align-items: center !important;
+    border-top: 1px solid #2c2c2e !important;
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.7) !important;
 }
 
-/* SMOKY PERFORMANCE TIER 3: Instant Native Button Responses */
-button, a, input[type="submit"], .clickable-icon {
-    touch-action: manipulation !important; /* Destroys the 300ms mobile tap delay */
-    -webkit-tap-highlight-color: transparent !important; /* Removes ugly grey tap flashes */
-    -webkit-touch-callout: none !important; /* Stops popups when long-pressing */
-}
-
-/* Prevent auto-zoom on mobile inputs */
-input, textarea {
-    font-size: 16px !important; 
+/* Input fields text size optimization for mobile keyboards */
+input[type="text"], input[type="password"], textarea {
+    font-size: 16px !important;
+    background-color: #0e0e0e !important;
+    color: #fff !important;
+    border: 1px solid #2c2c2e !important;
+    border-radius: 8px !important;
+    outline: none !important;
 }
