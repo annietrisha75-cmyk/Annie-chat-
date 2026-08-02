@@ -64,7 +64,7 @@ app.use(session({
 }));
 
 // Strong Admin Password Implementation
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'AnnieSecure2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Reeb911422@';
 app.post('/api/admin-login', (req, res) => {
     const { password } = req.body;
     if (password === ADMIN_PASSWORD) {
@@ -301,6 +301,18 @@ io.on('connection', (socket) => {
             io.to('admin-room').emit('admin-visitor-list', await Visitor.find({}).sort({ lastActive: -1 }));
         }
     });
+});
+// Serve static assets from 'public'
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Route root URL to visitor.html
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'visitor.html'));
+});
+
+// Route admin dashboard
+app.get('/admin.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 const PORT = process.env.PORT || 10000;
