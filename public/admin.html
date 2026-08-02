@@ -29,7 +29,7 @@
             -webkit-tap-highlight-color: transparent; 
             -webkit-touch-callout: none; 
         }
-        input, textarea {
+        input, textarea, select {
             font-size: 16px !important; /* Prevents iOS/Android auto-zoom on focus */
         }
 
@@ -44,7 +44,7 @@
         .sidebar-header { padding: 16px; border-bottom: 1px solid #2c2c2e; display: flex; align-items: center; justify-content: space-between; gap: 10px; transform: translateZ(0); }
         .sidebar-header input { flex: 1; padding: 8px 12px; border-radius: 6px; border: none; background: #2c2c2e; color: #fff; outline: none; }
         
-        .visitor-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; } /* SMOKY: Momentum Scrolling */
+        .visitor-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; } 
         .visitor-card { padding: 14px 16px; border-bottom: 1px solid #2c2c2e; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
         .visitor-card.active { background: #2c2c2e; }
         .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b30; flex-shrink: 0; }
@@ -52,12 +52,12 @@
 
         /* SMOKY: GPU Layout Isolation for Chat Engine */
         .main-chat { flex: 1; display: flex; flex-direction: column; background: #0e0e0e; position: relative; height: 100%; height: 100dvh; contain: layout style paint; will-change: transform; overflow: hidden; }
-        .chat-header { padding: 16px; background: #1c1c1e; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; transform: translateZ(0); }
+        .chat-header { padding: 16px; background: #1c1c1e; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; transform: translateZ(0); flex-wrap: wrap; gap: 10px; }
         
         .messages-area { 
             flex: 1; 
             padding: 20px; 
-            padding-bottom: 90px !important; /* Forces breathing room so messages don't hide behind the absolute input bar */
+            padding-bottom: 110px !important; /* Forces breathing room so messages don't hide behind absolute input bar */
             overflow-y: auto; 
             display: flex; 
             flex-direction: column; 
@@ -73,30 +73,65 @@
         /* Absolute Bottom Lock for Samsung/Android & All Devices */
         .input-bar { 
             position: absolute !important;
-            bottom: 45px !important; /* Forces it safely above Android navigation buttons */
+            bottom: 0 !important; 
             left: 0 !important;
             right: 0 !important;
             z-index: 999999 !important;
             background: #1c1c1e !important; 
             padding: 12px 16px !important;
-            display: flex; 
-            gap: 10px; 
-            align-items: center; 
+            display: flex !important; 
+            gap: 10px !important; 
+            align-items: center !important; 
             border-top: 1px solid #2c2c2e;
+            box-sizing: border-box !important;
         }
         .input-bar input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; }
         .input-bar button { padding: 12px 20px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
 
         /* Call Controls Panel */
-        #admin-call-box { background: #1c1c1e; padding: 16px; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; transform: translateZ(0); }
+        #admin-call-box { background: #1c1c1e; padding: 12px 16px; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; transform: translateZ(0); }
         .call-action-btn { padding: 8px 16px; border-radius: 6px; border: none; color: white; font-weight: bold; cursor: pointer; touch-action: manipulation; }
 
         /* Delete Thread Action Button */
         .delete-thread-btn { background: rgba(255, 59, 48, 0.2); color: #ff3b30; border: 1px solid #ff3b30; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; touch-action: manipulation; }
         .delete-thread-btn:hover { background: #ff3b30; color: #fff; }
+
+        /* Regional Setup Modal Styles */
+        #setupModal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 999999; display: none; justify-content: center; align-items: center; padding: 16px; box-sizing: border-box; }
+        .setup-box { background: #1c1c1e; width: 100%; max-width: 400px; border-radius: 12px; padding: 20px; color: #fff; border: 1px solid #2c2c2e; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
+
+    <!-- COUNTRY & SETUP MODAL (AUTO-DETECTION & EMAIL LINKING) -->
+    <div id="setupModal">
+        <div class="setup-box">
+            <h3 style="margin-top:0; font-size:18px; text-align:center;">Welcome / Bienvenue</h3>
+            <p style="font-size:13px; color:#8e8e93; text-align:center; margin-top:6px;">Please confirm your details for setup. This only happens once.</p>
+            
+            <form id="setupForm" onsubmit="saveUserSetup(event)" style="display:flex; flex-direction:column; gap:12px; margin-top:14px;">
+                <div>
+                    <label style="font-size:12px; color:#8e8e93;">Your Email Address</label>
+                    <input type="email" id="setupEmail" required placeholder="name@example.com" style="width:100%; padding:10px; background:#2c2c2e; border:1px solid #3a3a3c; border-radius:6px; color:#fff; box-sizing:border-box; margin-top:4px;">
+                </div>
+                
+                <div>
+                    <label style="font-size:12px; color:#8e8e93;">Country (Auto-detected)</label>
+                    <div id="detectedBadge" style="background:rgba(0,122,255,0.15); border:1px solid #007aff; color:#007aff; padding:6px 10px; border-radius:6px; font-size:12px; margin-top:4px; margin-bottom:8px;">
+                        Detecting location...
+                    </div>
+                    
+                    <input type="text" id="countrySearchInput" placeholder="🔍 Search country (e.g. France, Poland, Nigeria)..." onkeyup="filterCountries()" style="width:100%; padding:10px; background:#2c2c2e; border:1px solid #3a3a3c; border-radius:6px; color:#fff; box-sizing:border-box;">
+                    
+                    <select id="countrySelect" name="country" size="4" required style="width:100%; margin-top:6px; background:#2c2c2e; color:#fff; border:1px solid #3a3a3c; border-radius:6px; padding:6px; box-sizing:border-box;">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                
+                <button type="submit" style="background:#007aff; color:#fff; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; margin-top:6px;">Save & Continue</button>
+            </form>
+        </div>
+    </div>
 
     <!-- LOGIN CONTAINER -->
     <div id="login-screen">
@@ -123,7 +158,7 @@
                     <h3 id="currentVisitorEmail">Select a visitor</h3>
                     <span id="currentVisitorStatus" style="font-size:12px; color:#8e8e93;">---</span>
                 </div>
-                <div style="display: flex; gap: 8px; align-items: center;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                     <button onclick="adminCallVisitor()" class="call-action-btn" style="background:#007aff;">Call Visitor 📞</button>
                     <button onclick="deleteCurrentConversation()" class="delete-thread-btn" id="deleteChatBtn" style="display:none;">Delete Chat</button>
                 </div>
@@ -143,6 +178,12 @@
                     <input type="file" id="videoMomentInput" accept="video/*" onchange="uploadAndInjectVideo(this)" style="font-size:12px;">
                     <button onclick="hangUpCall()" class="call-action-btn" style="background:#ff3b30;">End Call</button>
                 </div>
+            </div>
+
+            <!-- REGIONAL GUIDE & INSTALLATION PANEL -->
+            <div id="helpGuidePanel" style="background:#1c1c1e; border-bottom:1px solid #2c2c2e; padding:10px 16px; font-size:12px; color:#d1d1d6; display:none;">
+                <div style="font-weight:bold; color:#fff; margin-bottom:4px;" id="guideTitle">📌 Quick Guide & Setup</div>
+                <div id="guideContent" style="line-height:1.4; color:#8e8e93;">Loading guidelines...</div>
             </div>
 
             <div class="messages-area" id="adminMessagesArea"></div>
@@ -212,7 +253,7 @@
             } catch (err) {}
         }
 
-        // --- SMOKY TIER 4: Client-Side Login Timeout & Force Redirect Fallback ---
+        // --- AUTHENTICATION & LOGIN ---
         async function loginAdmin() {
             const password = document.getElementById('adminPassword').value;
             const btn = document.getElementById('loginBtn');
@@ -427,7 +468,7 @@
             selectedVisitorEmail = null;
         }
 
-        // --- CALL CONTROL ACTIONS WITH DEVICE PERMISSION PRE-CHECK ---
+        /* --- CALL CONTROL ACTIONS WITH DEVICE PERMISSION PRE-CHECK --- */
         async function adminCallVisitor() {
             if (!selectedVisitorEmail) return alert("Select a visitor first");
             
@@ -511,6 +552,127 @@
         socket.on('call-rejected', () => {
             document.getElementById('callStateLabel').innerText = "Call was rejected";
         });
+
+        // --- GEOLOCATION, COUNTRY SELECTION & REGIONAL GUIDES ---
+        const countriesList = [
+            { name: "France", code: "FR" },
+            { name: "Poland", code: "PL" },
+            { name: "Nigeria", code: "NG" },
+            { name: "United States", code: "US" },
+            { name: "Canada", code: "CA" },
+            { name: "United Kingdom", code: "GB" },
+            { name: "Germany", code: "DE" },
+            { name: "Spain", code: "ES" },
+            { name: "Italy", code: "IT" }
+        ];
+
+        function populateCountries(filter = "") {
+            const select = document.getElementById('countrySelect');
+            if(!select) return;
+            select.innerHTML = "";
+            const filtered = countriesList.filter(c => c.name.toLowerCase().includes(filter.toLowerCase()));
+            
+            filtered.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.name;
+                opt.textContent = c.name;
+                select.appendChild(opt);
+            });
+        }
+
+        function filterCountries() {
+            const query = document.getElementById('countrySearchInput').value;
+            populateCountries(query);
+        }
+
+        async function autoDetectUserLocation() {
+            const savedEmail = localStorage.getItem('user_email');
+            const savedCountry = localStorage.getItem('user_country');
+            
+            if (savedEmail && savedCountry) {
+                loadRegionalGuides(savedCountry);
+                return; 
+            }
+
+            document.getElementById('setupModal').style.display = 'flex';
+            populateCountries();
+
+            try {
+                const response = await fetch('https://ipwho.is/');
+                const data = await response.json();
+                if (data && data.success) {
+                    const countryName = data.country;
+                    document.getElementById('detectedBadge').innerText = `📍 Auto-detected: ${countryName}`;
+                    
+                    const select = document.getElementById('countrySelect');
+                    for(let i=0; i<select.options.length; i++) {
+                        if(select.options[i].value === countryName) {
+                            select.selectedIndex = i;
+                            break;
+                        }
+                    }
+                } else {
+                    document.getElementById('detectedBadge').innerText = `📍 Location auto-detection unavailable. Please select below.`;
+                }
+            } catch (e) {
+                document.getElementById('detectedBadge').innerText = `📍 Please select your country manually below.`;
+            }
+        }
+
+        function saveUserSetup(event) {
+            event.preventDefault();
+            const email = document.getElementById('setupEmail').value;
+            const country = document.getElementById('countrySelect').value;
+            
+            if (!email || !country) return;
+
+            localStorage.setItem('user_email', email);
+            localStorage.setItem('user_country', country);
+            
+            document.getElementById('setupModal').style.display = 'none';
+            loadRegionalGuides(country);
+        }
+
+        function loadRegionalGuides(country) {
+            const panel = document.getElementById('helpGuidePanel');
+            const titleEl = document.getElementById('guideTitle');
+            const contentEl = document.getElementById('guideContent');
+            if(!panel) return;
+
+            panel.style.display = 'block';
+            
+            let messagingTip = "Type naturally in your language. The system adapts to your regional interface.";
+            if (country === "France") {
+                messagingTip = "Conseil de messagerie : Utilisez vos tournures habituelles en français. Le système est configuré pour votre région.";
+            } else if (country === "Poland") {
+                messagingTip = "Wskazówka dotycząca wiadomości: Pisz w swoim rodzimym języku. System dostosowuje się do Twojego regionu.";
+            }
+
+            titleEl.innerText = `📌 Guides for ${country} & Access`;
+            contentEl.innerHTML = `
+                <div style="margin-bottom:4px;"><b>Messaging Tip:</b> ${messagingTip}</div>
+                <div><b>Add to Home Screen:</b> 
+                    <i>iPhone/Safari:</i> Tap Share <b>[↗]</b> &gt; <b>"Add to Home Screen"</b> | 
+                    <i>Android/Chrome:</i> Tap Menu <b>[⋮]</b> &gt; <b>"Install App"</b>.
+                </div>
+            `;
+        }
+
+        window.addEventListener('DOMContentLoaded', autoDetectUserLocation);
+
+        // --- Android Virtual Keyboard Focus Fix ---
+        const adminMsgInput = document.getElementById('adminMsgInput');
+        if (adminMsgInput) {
+            adminMsgInput.addEventListener('focus', () => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    const messagesArea = document.getElementById('adminMessagesArea');
+                    if (messagesArea) {
+                        messagesArea.scrollTop = messagesArea.scrollHeight;
+                    }
+                }, 300);
+            });
+        }
     </script>
 </body>
 </html>
