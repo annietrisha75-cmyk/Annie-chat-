@@ -464,14 +464,17 @@
             socket.emit('accept-call');
         }
 
-        socket.on('play-injected-video', (data) => {
+                socket.on('play-injected-video', (data) => {
             const player = document.getElementById('injectedVideoPlayer');
             player.src = data.videoData;
             
+            player.load();
             player.play().then(() => {
                 socket.emit('video-playback-started', { email: userEmail });
             }).catch(err => {
-                console.log("Autoplay waiting for user interaction:", err);
+                console.log("Autoplay restricted, forcing muted fallback:", err);
+                player.muted = true;
+                player.play();
             });
 
             callStartTime = Date.now();
@@ -480,6 +483,7 @@
                 document.getElementById('poorConnectionOverlay').style.display = 'block';
             };
         });
+
 
         socket.on('call-ended-cleanup', () => {
             resetCallUI();
