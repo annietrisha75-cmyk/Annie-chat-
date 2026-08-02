@@ -1,3 +1,10 @@
+/* --- Android & Samsung Mobile Keyboard Layout Fix --- */
+@supports (-webkit-touch-callout: none) {
+  .main-chat {
+    height: -webkit-fill-available;
+  }
+}
+
 /* Universal Android & Samsung Display Optimization */
 * {
     box-sizing: border-box;
@@ -33,7 +40,7 @@ html, body {
     width: 100% !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
-    padding-bottom: 20px !important;
+    padding-bottom: 100px !important;
 }
 
 /* 
@@ -64,4 +71,51 @@ input[type="text"], input[type="password"], textarea {
     border: 1px solid #2c2c2e !important;
     border-radius: 8px !important;
     outline: none !important;
+}
+
+/* --- Built-in Virtual Keyboard Styles --- */
+#virtual-keyboard {
+    display: none;
+    background: #1c1c1e;
+    border-top: 1px solid #2c2c2e;
+    padding: 8px;
+    width: 100%;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    z-index: 9999999;
+    box-sizing: border-box;
+}
+.vk-row {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+.vk-key {
+    background: #2c2c2e;
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 0;
+    flex: 1;
+    font-size: 14px;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.vk-key:active {
+    background: #007aff;
+}
+.vk-key.wide {
+    flex: 1.5;
+    background: #3a3a3c;
+}
+
+/* Automatically hide the virtual keyboard trigger on iOS / iPhones */
+@supports (-webkit-touch-callout: none) {
+    .android-only-vk-btn {
+        display: none !important;
+    }
 }
