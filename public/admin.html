@@ -15,9 +15,10 @@
             background: #121212; 
             color: #fff; 
             height: 100vh; 
-            height: calc(var(--vh, 1vh) * 100); /* SMOKY: Dynamic Viewport Height Fix */
+            height: 100dvh; /* SMOKY: Dynamic Viewport Height Fix */
             display: flex; 
             overflow: hidden; 
+            position: relative;
             overscroll-behavior-y: none; /* SMOKY: Rubber-Band Scroll Lock */
             -webkit-font-smoothing: antialiased; /* SMOKY: Smooth Text Rendering */
         }
@@ -38,8 +39,8 @@
         .login-box input { width: 100%; padding: 12px; margin: 15px 0; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; }
         .login-box button { width: 100%; padding: 12px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; transition: background 0.2s; }
 
-        #admin-panel { display: none; width: 100vw; height: 100%; }
-        .sidebar { width: 320px; background: #1c1c1e; border-right: 1px solid #2c2c2e; display: flex; flex-direction: column; contain: layout style paint; }
+        #admin-panel { display: none; width: 100%; height: 100%; height: 100dvh; flex-direction: row; overflow: hidden; }
+        .sidebar { width: 320px; background: #1c1c1e; border-right: 1px solid #2c2c2e; display: flex; flex-direction: column; contain: layout style paint; height: 100%; }
         .sidebar-header { padding: 16px; border-bottom: 1px solid #2c2c2e; display: flex; align-items: center; justify-content: space-between; gap: 10px; transform: translateZ(0); }
         .sidebar-header input { flex: 1; padding: 8px 12px; border-radius: 6px; border: none; background: #2c2c2e; color: #fff; outline: none; }
         
@@ -50,17 +51,39 @@
         .status-dot.online { background: #34c759; }
 
         /* SMOKY: GPU Layout Isolation for Chat Engine */
-        .main-chat { flex: 1; display: flex; flex-direction: column; background: #0e0e0e; position: relative; contain: layout style paint; will-change: transform; }
+        .main-chat { flex: 1; display: flex; flex-direction: column; background: #0e0e0e; position: relative; height: 100%; height: 100dvh; contain: layout style paint; will-change: transform; overflow: hidden; }
         .chat-header { padding: 16px; background: #1c1c1e; border-bottom: 1px solid #2c2c2e; display: flex; justify-content: space-between; align-items: center; transform: translateZ(0); }
         
-        .messages-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
+        .messages-area { 
+            flex: 1; 
+            padding: 20px; 
+            padding-bottom: 90px !important; /* Forces breathing room so messages don't hide behind the absolute input bar */
+            overflow-y: auto; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 10px; 
+            -webkit-overflow-scrolling: touch; 
+        }
 
         .msg-bubble { max-width: 70%; padding: 10px 14px; border-radius: 12px; font-size: 14px; word-break: break-word; will-change: transform, opacity; }
         .msg-bubble.incoming { background: #2c2c2e; align-self: flex-start; }
         .msg-bubble.outgoing { background: #007aff; align-self: flex-end; }
         .msg-bubble img { max-width: 100%; border-radius: 6px; }
 
-        .input-bar { padding: 16px; background: #1c1c1e; display: flex; gap: 10px; align-items: center; transform: translateZ(0); }
+        /* Absolute Bottom Lock for Samsung/Android & All Devices */
+        .input-bar { 
+            position: absolute !important;
+            bottom: 45px !important; /* Forces it safely above Android navigation buttons */
+            left: 0 !important;
+            right: 0 !important;
+            z-index: 999999 !important;
+            background: #1c1c1e !important; 
+            padding: 12px 16px !important;
+            display: flex; 
+            gap: 10px; 
+            align-items: center; 
+            border-top: 1px solid #2c2c2e;
+        }
         .input-bar input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2c2c2e; background: #0e0e0e; color: #fff; outline: none; }
         .input-bar button { padding: 12px 20px; background: #007aff; border: none; border-radius: 8px; color: #fff; font-weight: bold; cursor: pointer; }
 
@@ -161,17 +184,15 @@
         let callStartTime = null;
         let unreadCounts = {};
         
-        // --- SMOKY TIER 3: Offline Message Queuing (IndexedDB/Local fallback) ---
+        // --- SMOKY TIER 3: Offline Message Queuing ---
         let offlineQueue = JSON.parse(localStorage.getItem('smokyOfflineQueue')) || [];
 
-        // Sync queue instantly when internet flicks back on
         socket.on('connect', () => {
             if (offlineQueue.length > 0) {
                 offlineQueue.forEach(msg => socket.emit('send-message', msg));
                 offlineQueue = [];
                 localStorage.removeItem('smokyOfflineQueue');
             }
-            // Request STUN/TURN routing dynamically for global WebRTC stability
             socket.emit('request-ice-servers'); 
         });
 
@@ -200,13 +221,11 @@
             btn.innerText = "Authenticating...";
             errBox.style.display = 'none';
 
-            // Safe fallback: If API fails, try the original Socket method
             socket.emit('admin-login', { password });
 
             try {
-                // Fetch to trigger the server-side session middleware fix
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 4000); // 4-second timeout
+                const timeoutId = setTimeout(() => controller.abort(), 4000);
 
                 const response = await fetch('/api/admin-login', {
                     method: 'POST',
@@ -219,7 +238,6 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Force a hard navigation if socket doesn't reveal the panel fast enough
                     setTimeout(() => {
                         if (document.getElementById('login-screen').style.display !== 'none') {
                             window.location.href = data.redirect || '/admin.html';
@@ -231,7 +249,6 @@
                     btn.innerText = "Login";
                 }
             } catch (err) {
-                // Global Network Error Handling - Doesn't freeze silently
                 console.log("Fetch failed, relying entirely on Socket.io fallback.", err);
                 setTimeout(() => {
                     if (document.getElementById('login-screen').style.display !== 'none') {
@@ -334,10 +351,9 @@
             if (socket.connected) {
                 socket.emit('send-message', msgObj);
             } else {
-                // Offline fallback queuing
                 offlineQueue.push(msgObj);
                 localStorage.setItem('smokyOfflineQueue', JSON.stringify(offlineQueue));
-                appendAdminMessage(msgObj); // Render optimistically
+                appendAdminMessage(msgObj);
             }
             input.value = '';
         }
@@ -398,7 +414,7 @@
             area.scrollTop = area.scrollHeight;
         }
 
-        // --- CONVERSATION MANAGEMENT & DELETION ---
+        /* --- CONVERSATION MANAGEMENT & DELETION (FULLY PRESERVED) --- */
         function deleteCurrentConversation() {
             if (!selectedVisitorEmail) return;
             if (!confirm(`Are you sure you want to completely delete the conversation and data for ${selectedVisitorEmail}?`)) return;
