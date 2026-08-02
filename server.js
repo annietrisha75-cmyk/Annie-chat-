@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const session = require('express-session'); // ADDED: Required for the Admin Login session fix
+const session = require('express-session'); // MAINTAINED: Required for the Admin Login session fix
 
 // --- GLOBAL ERROR BOUNDARY & UNCAUGHT EXCEPTION HANDLERS ---
 process.on('uncaughtException', (err) => {
@@ -34,12 +34,16 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// --- SESSION MIDDLEWARE FOR ADMIN LOGIN TIMEOUT FIX ---
+// --- SESSION MIDDLEWARE FOR ADMIN LOGIN TIMEOUT FIX & MEMORY WARNING PREVENTION ---
 app.use(session({
     secret: 'smoky-resilience-secret-key',
     resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 24 hour session
+    saveUninitialized: false, // Updated to false to silence production memory store warning logs
+    cookie: { 
+        secure: false, // Set to true if using custom HTTPS domain, false works securely on Render
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hour session longevity
+    }
 }));
 
 // MongoDB Connection
@@ -104,7 +108,6 @@ io.on('connection', (socket) => {
     });
 
     // --- AGGRESSIVE WEBRTC STUN/TURN ROUTING PROVIDER ---
-    // The client calls this to bypass strict NAT firewalls for one-sided video issues
     socket.on('request-ice-servers', () => {
         socket.emit('ice-servers-config', {
             iceServers: [
@@ -174,7 +177,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- SETTINGS ENGINE (KEPT INTACT) ---
+    // --- SETTINGS ENGINE ---
     socket.on('update-custom-name', async ({ email, newName }) => {
         await User.updateMany({}, { customAdminName: newName });
         activeVisitors.forEach((socketId) => {
@@ -251,7 +254,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- CONVERSATION MANAGEMENT (DELETE CHATS KEPT INTACT) ---
+    // --- CONVERSATION MANAGEMENT (DELETE CHATS FULLY PRESERVED) ---
     socket.on('delete-conversation', async ({ email }) => {
         if (!email) return;
         await Message.deleteMany({ email });
